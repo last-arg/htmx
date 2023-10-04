@@ -2020,6 +2020,8 @@ return (function () {
         }
 
         function initNode(elt) {
+            getEvents(elt, state);
+
             if (closest(elt, htmx.config.disableSelector)) {
                 cleanUpElement(elt)
                 return;
@@ -3793,24 +3795,26 @@ return (function () {
                 triggerEvent(body, 'htmx:load', {}); // give ready handlers a chance to load up before firing this event
                 body = null; // kill reference for gc
             }, 0);
-
-            state = getEvents(document, state);
-            for (const evt_str of state.events) {
-                addDocumentEvent(evt_str);
-            }
         })
 
         // TODO: have to probably make it 'global'
         var state = {
             // TODO: there might be more default events
-            events: ["click"],
+            events: [],
             trigger_from: {},
         };
         const attr = "hx-trigger"
+
         /** @param {Document | Element} base
          ** @param {Object} state */
         function getEvents(base, state) {
-            for (const elem of base.querySelectorAll(`[${attr}]`)) {
+            var elems = [];
+            if (base.hasAttribute && base.hasAttribute("hx-trigger")) {
+                elems.push(base);
+            }
+            Array.prototype.push.apply(elems, base.querySelectorAll(`[${attr}]`))
+            console.log(elems)
+            for (const elem of elems) {
                 const modifiers = elem.getAttribute(attr).split(",");
                 for (const mod of modifiers) {
                     const trimmed = mod.trim();
@@ -3818,6 +3822,7 @@ return (function () {
                     let event = values[0];
                     if (!state.events.includes(event)) {
                         state.events.push(event);
+                        addDocumentEvent(event);
                     }
 
                     for (let i = 1; i < values.length; i++) {
@@ -3901,9 +3906,21 @@ return (function () {
                         //     cleanUpElement(elt)
                         //     return
                         // }
-                        // issueAjaxRequest(verb, path, elt, evt)
-                        
 
+                        // TODO: 
+                        triggerEvent(elem, 'htmx:trigger')
+
+                        // TODO: Have to check every verb
+                        forEach(VERBS, function (verb) {
+                            if (hasAttribute(elem,'hx-' + verb)) {
+                                var path = getAttributeValue(elem, 'hx-' + verb);
+                                if (closest(elem, htmx.config.disableSelector)) {
+                                    cleanUpElement(elem)
+                                    return
+                                }
+                                issueAjaxRequest(verb, path, elem, evt)
+                            }
+                        });
                     }
                 }
 
@@ -3934,8 +3951,6 @@ return (function () {
                     return false;
                 }
                 
-
-                const a = performance.now();
                 if (!evt.bubbles || evt.cancelBubble) {
                     if (elem.hasAttribute(attr)) {
                         processHtmxTrigger(evt, elem)
@@ -3950,21 +3965,22 @@ return (function () {
                 // remove attribute or just make attribute with empty value?
                 // Empty hx-trigger would indicate that something was there.
                 // Will see what I will do.
-                const attr_event = `[${attr}*=${evt.type}]`;
+                const attr_event = `[${attr}*=${evt.type}],[data-${attr}*=${evt.type}]`;
                 let selector = `${attr_event}`;
-                const find_sels = state.trigger_from[evt.type]?.find;
-                console.log("state trigger_from", state.trigger_from[evt.type])
-                if (find_sels) {
-                    for (const attr_sel of find_sels) {
-                        const start_index = attr_sel.lastIndexOf(" ") + 1;
-                        if (start_index === 0) { continue }
-                        selector += `,[${attr}*='${attr_sel}'] ${attr_sel.slice(start_index)}`;
-                    }
-                }
+                // const find_sels = state.trigger_from[evt.type]?.find;
+                // console.log("state trigger_from", state.trigger_from[evt.type])
+                // if (find_sels) {
+                //     for (const attr_sel of find_sels) {
+                //         const start_index = attr_sel.lastIndexOf(" ") + 1;
+                //         if (start_index === 0) { continue }
+                //         selector += `,[${attr}*='${attr_sel}'] ${attr_sel.slice(start_index)}`;
+                //     }
+                // }
                 // NOTE: 'evt.cancelBubble' value will become true if 
                 // stop(Immediate)Propagation was called. 
                 // 'evt.bubbles' is read-only value but can something
                 // else changed it?
+                console.log("sel", selector);
                 while (elem && evt.bubbles && !evt.cancelBubble) {
                     processHtmxTrigger(evt, elem)                    
                     elem = elem.parentElement.closest(selector)
@@ -3988,7 +4004,6 @@ return (function () {
 
                 
     
-                console.log("travel up the DOM tree", performance.now() - a);
             })    
         }
         
