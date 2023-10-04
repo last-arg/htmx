@@ -3901,16 +3901,8 @@ return (function () {
                         // }
 
                         console.log("fire event", elem)
-                        // From function processVerbs()
-                        // if (closest(elt, htmx.config.disableSelector)) {
-                        //     cleanUpElement(elt)
-                        //     return
-                        // }
-
-                        // TODO: 
                         triggerEvent(elem, 'htmx:trigger')
 
-                        // TODO: Have to check every verb
                         forEach(VERBS, function (verb) {
                             if (hasAttribute(elem,'hx-' + verb)) {
                                 var path = getAttributeValue(elem, 'hx-' + verb);
@@ -3983,7 +3975,7 @@ return (function () {
                 console.log("sel", selector);
                 while (elem && evt.bubbles && !evt.cancelBubble) {
                     processHtmxTrigger(evt, elem)                    
-                    elem = elem.parentElement.closest(selector)
+                    elem = elem.parentElement?.closest(selector)
                 }
 
                 // Handle 'from:<value>' event modifier. <value> might exist
