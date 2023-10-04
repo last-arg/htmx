@@ -1416,7 +1416,19 @@ return (function () {
             return false;
         }
 
+        function validEventDelegation(triggerSpec) {
+            var has_trigger = Object.keys(triggerSpec).length === 1 && triggerSpec.trigger; 
+            return has_trigger;
+        }
+
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
+            if (validEventDelegation(triggerSpec)) {
+                // Don't add simple cases, that are easy to handle with 
+                // event delegation.
+                // This still adds htmx internal element data.
+                return;
+            }
+
             var elementData = getInternalData(elt);
             var eltsToListenOn;
             if (triggerSpec.from) {
@@ -3781,9 +3793,207 @@ return (function () {
                 triggerEvent(body, 'htmx:load', {}); // give ready handlers a chance to load up before firing this event
                 body = null; // kill reference for gc
             }, 0);
+
+            state = getEvents(document, state);
+            for (const evt_str of state.events) {
+                addDocumentEvent(evt_str);
+            }
         })
 
+        // TODO: have to probably make it 'global'
+        var state = {
+            // TODO: there might be more default events
+            events: ["click"],
+            trigger_from: {},
+        };
+        const attr = "hx-trigger"
+        /** @param {Document | Element} base
+         ** @param {Object} state */
+        function getEvents(base, state) {
+            for (const elem of base.querySelectorAll(`[${attr}]`)) {
+                const modifiers = elem.getAttribute(attr).split(",");
+                for (const mod of modifiers) {
+                    const trimmed = mod.trim();
+                    const values = trimmed.split(" ");
+                    let event = values[0];
+                    if (!state.events.includes(event)) {
+                        state.events.push(event);
+                    }
+
+                    for (let i = 1; i < values.length; i++) {
+                        const value = values[i];
+                        if (value.startsWith("from:")) {
+                            const rest = value.slice(5);
+                            let from_type = "selector";
+                            if (rest.endsWith("find")) {
+                                from_type = "find"
+                            } else if (rest.endsWith("closest")) {
+                                from_type = "closest"
+                            }
+
+                            if (!state.trigger_from[event]) {
+                                state.trigger_from[event] = {};
+                            }
+                            if (!state.trigger_from[event][from_type]) {
+                                state.trigger_from[event][from_type] = [];
+                            }
+
+                            const selector = from_type === "selector" ? rest : values[i+1]; 
+                            if (!state.trigger_from[event][from_type].includes(trimmed)) {
+                                state.trigger_from[event][from_type].push(trimmed);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return state;
+        }
+
+        /** @param {string} evt_str */
+        function addDocumentEvent(evt_str) {
+            document.addEventListener(evt_str, function(evt) {
+                /** @type {HTMLElement | null} */
+                let elem = evt.target;
+
+                function processHtmxTrigger(evt, elem) {
+                    if (shouldCancel(evt, elem)){
+                        evt.preventDefault();
+                    }
+
+                    const specs = getTriggerSpecs(elem);
+                    for (const spec of specs) {
+                        // Ignore other events types
+                        if (spec.trigger !== evt_str) {
+                            continue;
+                        }
+
+                        // NOTE: currently will only deal with easy events.
+                        // Only will deal with events that have only 'spec.trigger'.
+                        if (!validEventDelegation(spec)) {
+                            continue;
+                        }
+
+                        // TODO: Currently not handled in validEventDelegation()
+                        // if (spec.consume) {
+                        //     evt.stopPropagation();
+                        // }
+
+                        // Can I always assume 'document' and 'window' are true?
+                        // Althought between evt.target and document/window
+                        // might be a call to evt.stopPropagation. Have to 
+                        // consider this. Would basically have to check if
+                        // there is evt.type with consume. Make sure 
+                        // consume doesn't have 'from:' that might apply to 
+                        // some other section of the tree.
+
+                        // Currently not used because validEventDelegation
+                        // if (spec.from) {
+                        //     if (!hasValidFrom(elem, spec.from)) {
+                        //         continue;
+                        //     }
+                        // }
+
+                        console.log("fire event", elem)
+                        // From function processVerbs()
+                        // if (closest(elt, htmx.config.disableSelector)) {
+                        //     cleanUpElement(elt)
+                        //     return
+                        // }
+                        // issueAjaxRequest(verb, path, elt, evt)
+                        
+
+                    }
+                }
+
+                function hasValidFrom(elem, from) {
+                    if (from.indexOf("closest ") === 0) {
+                        // TODO: have to make sure there is no 'consume'
+                        // event modifier between current element and
+                        // closest element
+                        return !!closest(elem, normalizeSelector(from.substr(8)));
+                    } else if (from.indexOf("find ") === 0) {
+                        // Should not have the same problem as 'closest' because
+                        // I am sure that there was no consume/stopPropagation.
+                        // I have already walked and checked the tree.
+                        // TODO: use Node.contains instead. Could right 
+                        // polyfill also using querySelector.
+                        // TODO: This executes event too late. Have to execute
+                        // when child element is found in DOM (when walking
+                        // up the tree). Best option maybe would be to gather
+                        // all 'find' selectors.
+                        return !!getDocument().querySelector(normalizeSelector(from.substr(5)));
+                    } else if (from === 'document') {
+                        // TODO: same as closest
+                        return document;
+                    } else if (from === 'window') {
+                        // TODO: same as closest
+                        return window;
+                    } 
+                    return false;
+                }
+                
+
+                const a = performance.now();
+                if (!evt.bubbles || evt.cancelBubble) {
+                    if (elem.hasAttribute(attr)) {
+                        processHtmxTrigger(evt, elem)
+                    }
+                    return;
+                }
+
+                // TODO: do I have to consider event modifiers 'target:' and 
+                // 'from:' in CSS selector?
+                // TODO: have to modify attribute value if it has event 
+                // modifier 'once'. In case 'once' is the only event
+                // remove attribute or just make attribute with empty value?
+                // Empty hx-trigger would indicate that something was there.
+                // Will see what I will do.
+                const attr_event = `[${attr}*=${evt.type}]`;
+                let selector = `${attr_event}`;
+                const find_sels = state.trigger_from[evt.type]?.find;
+                console.log("state trigger_from", state.trigger_from[evt.type])
+                if (find_sels) {
+                    for (const attr_sel of find_sels) {
+                        const start_index = attr_sel.lastIndexOf(" ") + 1;
+                        if (start_index === 0) { continue }
+                        selector += `,[${attr}*='${attr_sel}'] ${attr_sel.slice(start_index)}`;
+                    }
+                }
+                // NOTE: 'evt.cancelBubble' value will become true if 
+                // stop(Immediate)Propagation was called. 
+                // 'evt.bubbles' is read-only value but can something
+                // else changed it?
+                while (elem && evt.bubbles && !evt.cancelBubble) {
+                    processHtmxTrigger(evt, elem)                    
+                    elem = elem.parentElement.closest(selector)
+                }
+
+                // Handle 'from:<value>' event modifier. <value> might exist
+                // anywhere on the page. It might not be part of the current
+                // section of tree going up or down.
+                // <value> can be:
+                // - <CSS selector> - above case applies, can be anywhere
+                // - closest <selector> (itself and ancestor)
+                // - find <selector> (chilren)
+                // - document
+                // - window
+                // Last four cases can be found from origin (evt.target).
+
+                // elem = evt.target.parentElement;
+                // while (elem && evt.bubbles && !evt.cancelBubble) {
+                    
+                // }
+
+                
+    
+                console.log("travel up the DOM tree", performance.now() - a);
+            })    
+        }
+        
         return htmx;
     }
 )()
 }));
+
