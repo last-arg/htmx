@@ -1428,8 +1428,10 @@ return (function () {
         }
 
         function validEventDelegation(triggerSpec, elem) {
-            var has_trigger = Object.keys(triggerSpec).length === 1 && triggerSpec.trigger && shouldCancelImpl(triggerSpec, elem);  
-            return has_trigger;
+            var spec_len = Object.keys(triggerSpec).length; 
+            var has_trigger = spec_len === 1 && triggerSpec.trigger;  
+            var has_target = spec_len === 2 && triggerSpec.trigger && triggerSpec.target;  
+            return (has_trigger || has_target) && !shouldCancelImpl(triggerSpec.target, elem);
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -3866,6 +3868,12 @@ return (function () {
                             continue;
                         }
 
+                        if (spec.target && evt.target) {
+                            if (!matches(evt.target, spec.target)) {
+                                continue;
+                            }
+                        }
+                        
                         // TODO: Currently not handled in validEventDelegation()
                         // if (spec.consume) {
                         //     evt.stopPropagation();
