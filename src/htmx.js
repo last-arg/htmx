@@ -1427,21 +1427,15 @@ return (function () {
             return false;
         }
 
-        function validEventDelegation(triggerSpec, elem) {
+        function isValidEventForDelegation(triggerSpec, elem) {
             var spec_len = Object.keys(triggerSpec).length; 
             var has_trigger = spec_len === 1 && triggerSpec.trigger;  
             var has_target = spec_len === 2 && triggerSpec.trigger && triggerSpec.target;  
-            return (has_trigger || has_target) && !shouldCancelImpl(triggerSpec.target, elem);
+            var is_form_event = triggerSpec.trigger && shouldCancelImpl(triggerSpec.trigger, elem);
+            return (has_trigger || has_target) && !is_form_event;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
-            if (validEventDelegation(triggerSpec, elt)) {
-                // Don't add simple cases, that are easy to handle with 
-                // event delegation.
-                // This still adds htmx internal element data.
-                return;
-            }
-
             var elementData = getInternalData(elt);
             var eltsToListenOn;
             if (triggerSpec.from) {
@@ -1854,6 +1848,13 @@ return (function () {
                 nodeData.polling = true;
                 processPolling(elt, handler, triggerSpec);
             } else {
+                if (isValidEventForDelegation(triggerSpec, elt)) {
+                    // Don't add simple cases, that are easy to handle with 
+                    // event delegation.
+                    // This still adds htmx internal element data.
+                    return;
+                }
+
                 addEventListener(elt, handler, nodeData, triggerSpec);
             }
         }
@@ -3825,7 +3826,7 @@ return (function () {
          ** @param {Object} state */
         function initEventDelegation(triggerSpecs, elem, state) {
             for (const spec of triggerSpecs) {
-                if (validEventDelegation(spec, elem) && !state.events.includes(spec.trigger)) {
+                if (isValidEventForDelegation(spec, elem) && !state.events.includes(spec.trigger)) {
                     state.events.push(spec.trigger);
                     addDocumentEvent(spec.trigger);
                 }
@@ -3848,15 +3849,14 @@ return (function () {
 
 
                 function processHtmxTrigger(evt, elem) {
-                    console.log("== processHtmxTrigger", elem)
+                    console.group("processHtmxTrigger", elem)
                     const specs = getTriggerSpecs(elem);
 
-                    if (validEventDelegation(specs, elem) && shouldCancel(evt, elem)){
+                    if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){
                         evt.preventDefault();
                     }
 
                     for (const spec of specs) {
-                        console.log("evt.type:", evt.type, "| spec.trigger:", spec.trigger)
                         // Ignore other events types
                         if (spec.trigger !== evt_str) {
                             continue;
@@ -3864,7 +3864,7 @@ return (function () {
 
                         // NOTE: currently will only deal with easy events.
                         // Only will deal with events that have only 'spec.trigger'.
-                        if (!validEventDelegation(spec, elem)) {
+                        if (!isValidEventForDelegation(spec, elem)) {
                             continue;
                         }
 
@@ -3894,7 +3894,6 @@ return (function () {
                         //     }
                         // }
 
-                        console.log("fire event", elem, evt.target.tagName)
                         triggerEvent(elem, 'htmx:trigger')
 
                         if ((getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
@@ -3908,6 +3907,7 @@ return (function () {
                                     cleanUpElement(elem)
                                     return
                                 }
+                                console.log("issueAjaxRequest", elem)
                                 issueAjaxRequest(verb, path, elem, evt)
                             }
                         });
@@ -3915,7 +3915,6 @@ return (function () {
 
                     // TODO: need to handle form stuff differently
                     var is_form_events = evt.type === "click" || evt.type === "focusin" || evt.type === "focusout";
-                    console.log("is_form_events", is_form_events, elem)
                     if (is_form_events && elem.tagName === "FORM" || (getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
                         var form = resolveTarget("#" + getRawAttribute(elem, "form")) || closest(elem, "form")
                         if (!form) {
@@ -3936,7 +3935,7 @@ return (function () {
                         }
                     }
 
-                    
+                    console.groupEnd();    
                 }
 
                 function hasValidFrom(elem, from) {
@@ -3984,11 +3983,7 @@ return (function () {
                 }
                 var selector = VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
 
-                console.log("sel", selector);
-                if (elem.matches(selector)) {
-                    processHtmxTrigger(evt, elem)                    
-                }
-                elem = elem.parentElement;
+                elem = elem.closest(selector);
                 // NOTE: 'evt.cancelBubble' value will become true if 
                 // stop(Immediate)Propagation was called. 
                 // 'evt.bubbles' is read-only value but can something
