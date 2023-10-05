@@ -18,6 +18,7 @@
 }(typeof self !== 'undefined' ? self : this, function () {
 return (function () {
         'use strict';
+        console.log("HTMX MODIFIED");
 
         // Public API
         //** @type {import("./htmx").HtmxApi} */
@@ -1384,7 +1385,17 @@ return (function () {
          * @returns
          */
         function shouldCancel(evt, elt) {
-            if (evt.type === "submit" || evt.type === "click") {
+            return shouldCancelImpl(evt.type, elt);
+        }
+
+        /**
+         *
+         * @param {string} evtType
+         * @param {HTMLElement} elt
+         * @returns
+         */
+        function shouldCancelImpl(evtType, elt) {
+            if (evtType === "submit" || evtType === "click") {
                 if (elt.tagName === "FORM") {
                     return true;
                 }
@@ -1398,7 +1409,7 @@ return (function () {
             }
             return false;
         }
-
+        
         function ignoreBoostedAnchorCtrlClick(elt, evt) {
             return getInternalData(elt).boosted && elt.tagName === "A" && evt.type === "click" && (evt.ctrlKey || evt.metaKey);
         }
@@ -1416,13 +1427,13 @@ return (function () {
             return false;
         }
 
-        function validEventDelegation(triggerSpec) {
-            var has_trigger = Object.keys(triggerSpec).length === 1 && triggerSpec.trigger; 
+        function validEventDelegation(triggerSpec, elem) {
+            var has_trigger = Object.keys(triggerSpec).length === 1 && triggerSpec.trigger && shouldCancelImpl(triggerSpec, elem);  
             return has_trigger;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
-            if (validEventDelegation(triggerSpec)) {
+            if (validEventDelegation(triggerSpec, elt)) {
                 // Don't add simple cases, that are easy to handle with 
                 // event delegation.
                 // This still adds htmx internal element data.
@@ -1927,6 +1938,7 @@ return (function () {
             }
 
             var maybeSetLastButtonClicked = function (evt) {
+                // TODO?: should not need this closest function call?
                 var elt = closest(evt.target, "button, input[type='submit']");
                 if (elt !== null) {
                     var internalData = getInternalData(form);
@@ -2020,7 +2032,6 @@ return (function () {
         }
 
         function initNode(elt) {
-            getEvents(elt, state);
 
             if (closest(elt, htmx.config.disableSelector)) {
                 cleanUpElement(elt)
@@ -2071,6 +2082,9 @@ return (function () {
                 if (wsInfo) {
                     processWebSocketInfo(elt, nodeData, wsInfo);
                 }
+
+                initEventDelegation(triggerSpecs, elt, state);
+                
                 triggerEvent(elt, "htmx:afterProcessNode");
             }
         }
@@ -3805,51 +3819,13 @@ return (function () {
         };
         const attr = "hx-trigger"
 
-        /** @param {Document | Element} base
+        /** @param {any[]} triggerSpecs
          ** @param {Object} state */
-        function getEvents(base, state) {
-            var elems = [];
-            if (base.hasAttribute && base.hasAttribute("hx-trigger")) {
-                elems.push(base);
-            }
-            Array.prototype.push.apply(elems, base.querySelectorAll(`[${attr}]`))
-            console.log(elems)
-            for (const elem of elems) {
-                const modifiers = elem.getAttribute(attr).split(",");
-                for (const mod of modifiers) {
-                    const trimmed = mod.trim();
-                    const values = trimmed.split(" ");
-                    let event = values[0];
-                    if (!state.events.includes(event)) {
-                        state.events.push(event);
-                        addDocumentEvent(event);
-                    }
-
-                    for (let i = 1; i < values.length; i++) {
-                        const value = values[i];
-                        if (value.startsWith("from:")) {
-                            const rest = value.slice(5);
-                            let from_type = "selector";
-                            if (rest.endsWith("find")) {
-                                from_type = "find"
-                            } else if (rest.endsWith("closest")) {
-                                from_type = "closest"
-                            }
-
-                            if (!state.trigger_from[event]) {
-                                state.trigger_from[event] = {};
-                            }
-                            if (!state.trigger_from[event][from_type]) {
-                                state.trigger_from[event][from_type] = [];
-                            }
-
-                            const selector = from_type === "selector" ? rest : values[i+1]; 
-                            if (!state.trigger_from[event][from_type].includes(trimmed)) {
-                                state.trigger_from[event][from_type].push(trimmed);
-                            }
-                            break;
-                        }
-                    }
+        function initEventDelegation(triggerSpecs, elem, state) {
+            for (const spec of triggerSpecs) {
+                if (validEventDelegation(spec, elem) && !state.events.includes(spec.trigger)) {
+                    state.events.push(spec.trigger);
+                    addDocumentEvent(spec.trigger);
                 }
             }
 
@@ -3861,14 +3837,24 @@ return (function () {
             document.addEventListener(evt_str, function(evt) {
                 /** @type {HTMLElement | null} */
                 let elem = evt.target;
+                if (!elem) { return; }
+
+                // TODO: See how to handle/ignore from:document.
+                if (elem === document) {
+                    return;
+                }
+
 
                 function processHtmxTrigger(evt, elem) {
-                    if (shouldCancel(evt, elem)){
+                    console.log("== processHtmxTrigger", elem)
+                    const specs = getTriggerSpecs(elem);
+
+                    if (validEventDelegation(specs, elem) && shouldCancel(evt, elem)){
                         evt.preventDefault();
                     }
 
-                    const specs = getTriggerSpecs(elem);
                     for (const spec of specs) {
+                        console.log("evt.type:", evt.type, "| spec.trigger:", spec.trigger)
                         // Ignore other events types
                         if (spec.trigger !== evt_str) {
                             continue;
@@ -3876,7 +3862,7 @@ return (function () {
 
                         // NOTE: currently will only deal with easy events.
                         // Only will deal with events that have only 'spec.trigger'.
-                        if (!validEventDelegation(spec)) {
+                        if (!validEventDelegation(spec, elem)) {
                             continue;
                         }
 
@@ -3900,8 +3886,12 @@ return (function () {
                         //     }
                         // }
 
-                        console.log("fire event", elem)
+                        console.log("fire event", elem, evt.target.tagName)
                         triggerEvent(elem, 'htmx:trigger')
+
+                        if ((getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
+                        }
+                        
 
                         forEach(VERBS, function (verb) {
                             if (hasAttribute(elem,'hx-' + verb)) {
@@ -3914,6 +3904,31 @@ return (function () {
                             }
                         });
                     }
+
+                    // TODO: need to handle form stuff differently
+                    var is_form_events = evt.type === "click" || evt.type === "focusin" || evt.type === "focusout";
+                    console.log("is_form_events", is_form_events, elem)
+                    if (is_form_events && elem.tagName === "FORM" || (getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
+                        var form = resolveTarget("#" + getRawAttribute(elem, "form")) || closest(elem, "form")
+                        if (!form) {
+                            return
+                        }
+
+                        // need to handle both click and focus in:
+                        //   focusin - in case someone tabs in to a button and hits the space bar
+                        //   click - on OSX buttons do not focus on click see https://bugs.webkit.org/show_bug.cgi?id=13724
+                        if (evt.type === "click" || evt.type === "focusin") {
+                            if (elem.matches("button, input[type='submit']")) {
+                                var internalData = getInternalData(form);
+                                internalData.lastButtonClicked = elem;
+                            }
+                        } else if (evt.type === "focusout") {
+                            var internalData = getInternalData(form);
+                            internalData.lastButtonClicked = null;
+                        }
+                    }
+
+                    
                 }
 
                 function hasValidFrom(elem, from) {
@@ -3943,13 +3958,6 @@ return (function () {
                     return false;
                 }
                 
-                if (!evt.bubbles || evt.cancelBubble) {
-                    if (elem.hasAttribute(attr)) {
-                        processHtmxTrigger(evt, elem)
-                    }
-                    return;
-                }
-
                 // TODO: do I have to consider event modifiers 'target:' and 
                 // 'from:' in CSS selector?
                 // TODO: have to modify attribute value if it has event 
@@ -3957,22 +3965,26 @@ return (function () {
                 // remove attribute or just make attribute with empty value?
                 // Empty hx-trigger would indicate that something was there.
                 // Will see what I will do.
-                const attr_event = `[${attr}*=${evt.type}],[data-${attr}*=${evt.type}]`;
-                let selector = `${attr_event}`;
-                // const find_sels = state.trigger_from[evt.type]?.find;
-                // console.log("state trigger_from", state.trigger_from[evt.type])
-                // if (find_sels) {
-                //     for (const attr_sel of find_sels) {
-                //         const start_index = attr_sel.lastIndexOf(" ") + 1;
-                //         if (start_index === 0) { continue }
-                //         selector += `,[${attr}*='${attr_sel}'] ${attr_sel.slice(start_index)}`;
-                //     }
-                // }
+
+                // TODO: could construct this condotinally
+                // - submit events require certain elements
+                var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
+                var attr_event = `[${attr}*=${evt.type}],[data-${attr}*=${evt.type}]`;
+                if (evt.type === "click") {
+                    // NOTE: Empty hx-trigger will get click event
+                    attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
+                }
+                var selector = VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
+
+                console.log("sel", selector);
+                if (elem.matches(selector)) {
+                    processHtmxTrigger(evt, elem)                    
+                }
+                elem = elem.parentElement;
                 // NOTE: 'evt.cancelBubble' value will become true if 
                 // stop(Immediate)Propagation was called. 
                 // 'evt.bubbles' is read-only value but can something
                 // else changed it?
-                console.log("sel", selector);
                 while (elem && evt.bubbles && !evt.cancelBubble) {
                     processHtmxTrigger(evt, elem)                    
                     elem = elem.parentElement?.closest(selector)
@@ -3988,15 +4000,7 @@ return (function () {
                 // - document
                 // - window
                 // Last four cases can be found from origin (evt.target).
-
-                // elem = evt.target.parentElement;
-                // while (elem && evt.bubbles && !evt.cancelBubble) {
-                    
-                // }
-
-                
-    
-            })    
+            }, { capture: false, passive: false })    
         }
         
         return htmx;
