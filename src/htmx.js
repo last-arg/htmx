@@ -1431,8 +1431,11 @@ return (function () {
             var spec_len = Object.keys(triggerSpec).length; 
             var has_trigger = spec_len === 1 && triggerSpec.trigger;  
             var has_target = spec_len === 2 && triggerSpec.trigger && triggerSpec.target;  
+            var is_ext = hasAttribute("hx-ext");
+            var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
+            var is_lone_trigger = hasAttribute(elem, "hx-trigger") && (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
             var is_form_event = triggerSpec.trigger && shouldCancelImpl(triggerSpec.trigger, elem);
-            return (has_trigger || has_target) && !is_form_event;
+            return (has_trigger || has_target) && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -1516,6 +1519,7 @@ return (function () {
                         }
                     }
                 };
+
                 if (nodeData.listenerInfos == null) {
                     nodeData.listenerInfos = [];
                 }
@@ -1524,6 +1528,8 @@ return (function () {
                     listener: eventListener,
                     on: eltToListenOn
                 })
+
+                console.log("add event", triggerSpec, eltToListenOn)
                 eltToListenOn.addEventListener(triggerSpec.trigger, eventListener);
             });
         }
@@ -1815,6 +1821,7 @@ return (function () {
         }
 
         function addTriggerHandler(elt, triggerSpec, nodeData, handler) {
+            console.log("trig", elt)
             if (triggerSpec.sseEvent) {
                 processSSETrigger(elt, handler, triggerSpec.sseEvent);
             } else if (triggerSpec.trigger === "revealed") {
@@ -1848,6 +1855,7 @@ return (function () {
                 nodeData.polling = true;
                 processPolling(elt, handler, triggerSpec);
             } else {
+                console.log("spec", isValidEventForDelegation(triggerSpec, elt), triggerSpec, elt)
                 if (isValidEventForDelegation(triggerSpec, elt)) {
                     // Don't add simple cases, that are easy to handle with 
                     // event delegation.
@@ -2035,11 +2043,13 @@ return (function () {
         }
 
         function initNode(elt) {
+            console.group("initNode", elt)
 
             if (closest(elt, htmx.config.disableSelector)) {
                 cleanUpElement(elt)
                 return;
             }
+            console.log("triggerEvent", elt)
             var nodeData = getInternalData(elt);
             if (nodeData.initHash !== attributeHash(elt)) {
                 // clean up any previously processed info
@@ -2090,6 +2100,7 @@ return (function () {
                 
                 triggerEvent(elt, "htmx:afterProcessNode");
             }
+            console.groupEnd();
         }
 
         function processNode(elt) {
@@ -2099,6 +2110,7 @@ return (function () {
                 return;
             }
             initNode(elt);
+            console.log("forEach elements initNode")
             forEach(findElementsToProcess(elt), function(child) { initNode(child) });
             // Because it happens second, the new way of adding onHandlers superseeds the old one
             // i.e. if there are any hx-on:eventName attributes, the hx-on attribute will be ignored
@@ -3835,6 +3847,18 @@ return (function () {
             return state;
         }
 
+        // TODO: could construct this conditionally
+        // - submit events require certain elements
+        function createEventSelector(evtType) {
+            var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
+            var attr_event = `[${attr}*=${evtType}],[data-${attr}*=${evtType}]`;
+            if (evtType === "click") {
+                // NOTE: Empty hx-trigger will get click event
+                attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
+            }
+            return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
+        }
+
         /** @param {string} evt_str */
         function addDocumentEvent(evt_str) {
             document.addEventListener(evt_str, function(evt) {
@@ -3973,15 +3997,7 @@ return (function () {
                 // Empty hx-trigger would indicate that something was there.
                 // Will see what I will do.
 
-                // TODO: could construct this condotinally
-                // - submit events require certain elements
-                var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
-                var attr_event = `[${attr}*=${evt.type}],[data-${attr}*=${evt.type}]`;
-                if (evt.type === "click") {
-                    // NOTE: Empty hx-trigger will get click event
-                    attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
-                }
-                var selector = VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
+                var selector = createEventSelector(evt.type);
 
                 elem = elem.closest(selector);
                 // NOTE: 'evt.cancelBubble' value will become true if 
