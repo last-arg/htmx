@@ -1447,10 +1447,11 @@ return (function () {
             }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
+            // This is more to detect extension elements
             var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
             var is_form_event = shouldCancelImpl(triggerSpec.trigger, elem);
             // console.log("conds", !is_invalid_form, !is_form_event, !is_ext, is_valid_selector)
-            return !is_invalid_form && !is_form_event && !is_ext && is_valid_selector;
+            return !is_invalid_form && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
