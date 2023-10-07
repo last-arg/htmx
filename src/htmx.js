@@ -3985,7 +3985,7 @@ return (function () {
                                             rule = rule.trim();
                                             if (rule.indexOf(evt.type) === 0 && rule.indexOf("from:" + selector, evt.type.length) >= -1) {
                                                 elems.push(el);
-                                                break matched_elems;
+                                                continue matched_elems;
                                             }
                                         }
                                     }
