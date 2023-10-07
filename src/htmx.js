@@ -3920,6 +3920,12 @@ return (function () {
                             continue;
                         }
 
+                        if (spec.target && evt.target) {
+                            if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
+                                continue;
+                            }
+                        }
+
                         var elems = [];
 
                         if (state.trigger_from[evt.type]) {
@@ -3952,13 +3958,6 @@ return (function () {
                         }
                         console.log("elems", elems)
 
-                        // TODO: try moving this higher up after I get 'form:' code working
-                        if (spec.target && evt.target) {
-                            if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
-                                continue;
-                            }
-                        }
-                        
                         // TODO: Currently not handled in validEventDelegation()
                         // if (spec.consume) {
                         //     evt.stopPropagation();
