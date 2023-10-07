@@ -3850,7 +3850,7 @@ return (function () {
         /** @param {Element} elem
          ** @param {State} state */
         function initEventDelegation(triggerSpecs, elem, state) {
-            for (const spec of triggerSpecs) {
+            for (var spec of triggerSpecs) {
                 if (!isValidEventForDelegation(spec, elem)) {
                     continue;
                 }
@@ -3865,6 +3865,7 @@ return (function () {
                     // - hx-trigger value (part that applies to this event type)
                     // - Do I have to take 'consume' into account?
                     var from = state.trigger_from;
+                    console.log("add", spec.from)
                     if (!from[spec.trigger]) {
                         from[spec.trigger] = [spec.from];
                     } else if (from[spec.trigger].indexOf(spec.from) === -1) {
@@ -3872,14 +3873,14 @@ return (function () {
                     }
                 }
                 if (spec.target) {
-                    const target = state.trigger_target;
+                    var target = state.trigger_target;
                     if (!target[spec.trigger]) {
                         target[spec.trigger] = {};
                     }
-                    const bucket = spec.from ? spec.from : "self";
+                    var bucket = spec.from ? spec.from : "self";
                     if (!target[spec.trigger][bucket]) {
                         target[spec.trigger][bucket] = [spec.target];
-                    } else {
+                    } else if (target[spec.trigger][bucket].indexOf(spec.target) === -1) {
                         target[spec.trigger][bucket].push(spec.target);
                     }
                 }
