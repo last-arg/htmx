@@ -1869,9 +1869,6 @@ return (function () {
                 processPolling(elt, handler, triggerSpec);
             } else {
                 if (isValidEventForDelegation(triggerSpec, elt)) {
-                    // Don't add simple cases, that are easy to handle with 
-                    // event delegation.
-                    // This still adds htmx internal element data.
                     return;
                 }
 
@@ -3838,11 +3835,13 @@ return (function () {
         /** @typedef {Object} State
           * @property {string[]} events
           * @property {Object.<string, string>} trigger_from
+          * @property {Object.<string, string>} trigger_target
           */
         var state = {
             events: [],
             // TODO: use Map instead?
             trigger_from: {},
+            trigger_target: {},
         };
         const attr = "hx-trigger"
 
@@ -3865,11 +3864,22 @@ return (function () {
                     // - hx-trigger value (part that applies to this event type)
                     // - Do I have to take 'consume' into account?
                     var from = state.trigger_from;
-                    console.log(from)
                     if (!from[spec.trigger]) {
                         from[spec.trigger] = [spec.from];
                     } else if (from[spec.trigger].indexOf(spec.from) === -1) {
                         from[spec.trigger].push(spec.from);
+                    }
+                }
+                if (spec.target) {
+                    const target = state.trigger_target;
+                    if (!target[spec.trigger]) {
+                        target[spec.trigger] = {};
+                    }
+                    const bucket = spec.from ? spec.from : "self";
+                    if (!target[spec.trigger][bucket]) {
+                        target[spec.trigger][bucket] = [spec.target];
+                    } else {
+                        target[spec.trigger][bucket].push(spec.target);
                     }
                 }
                 if (!state.events.includes(spec.trigger)) {
@@ -3888,13 +3898,15 @@ return (function () {
             var attr_event = `[${attr}*=${evtType}],[data-${attr}*=${evtType}]`;
             if (evtType === "click") {
                 // NOTE: Empty hx-trigger will get click event
+                // Althought empty hx-trigger event callback doesn't do anything.
+                // Empty function body. It is empty function body if there
+                // is no ajax action to take (i.e. no hx-get, hx-post, ...).
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
             const from = state.trigger_from[evtType];
             if (from && from.length > 0) {
                 attr_event += "," + from.join(",");
             }
-            console.log(attr_event)
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
 
@@ -3942,14 +3954,33 @@ return (function () {
                         var elems = [];
 
                         if (state.trigger_from[evt.type]) {
+                            var trigger_target = state.trigger_target[evt.type]
+                            var self_selectors = ""
+                            // TODO: do I need self here? Don't I just need to
+                            // check on 'elem'? And that is done above here
+                            // by spec.target.
+                            if (trigger_target && trigger_target["self"]) {
+                                self_selectors = trigger_target["self"].join(",");
+                            }
                             for (var selector of state.trigger_from[evt.type]) {
+                                console.log(elem, selector)
                                 if (matches(elem, selector)) {
+                                    var target_selectors = self_selectors.slice(0);
+                                    console.log("trigger_target", trigger_target);
+                                    if (trigger_target && trigger_target[selector]) {
+                                        target_selectors += trigger_target[selector].join(",");
+                                    }
                                     // TODO: add 'data-hx' attribute selectors
                                     const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
+                                    // ajax request elem
                                     const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
                                     // NOTE: Have to make sure that 'event type' and 
                                     // 'from:' are part of the same rule.
                                     matched_elems: for (var el of matched_elems) {
+                                        if (target_selectors.length > 0 && !matches(evt.target, target_selectors)) {
+                                           continue; 
+                                        }
+
                                         for (var rule of getAttributeValue(el, "hx-trigger").split(",")) {
                                             rule = rule.trim();
                                             if (rule.indexOf(evt.type) === 0 && rule.indexOf("from:" + selector, evt.type.length) >= -1) {
@@ -3970,11 +4001,11 @@ return (function () {
                             elems.push(elem);
                         }
                         console.log("elems", elems)
+                        console.log("target", evt.target)
 
-                        // TODO: Currently not handled in validEventDelegation()
-                        // if (spec.consume) {
-                        //     evt.stopPropagation();
-                        // }
+                        if (spec.consume) {
+                            evt.stopPropagation();
+                        }
 
                         // Can I always assume 'document' and 'window' are true?
                         // Althought between evt.target and document/window
@@ -4093,7 +4124,7 @@ return (function () {
                 // - document
                 // - window
                 // Last four cases can be found from origin (evt.target).
-            }, { capture: false, passive: false })    
+            }, true)    
         }
         
         return htmx;
