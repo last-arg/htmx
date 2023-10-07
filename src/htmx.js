@@ -1429,15 +1429,28 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var spec_len = Object.keys(triggerSpec).length; 
-            var has_trigger = spec_len === 1 && triggerSpec.trigger;  
-            var has_target = spec_len === 2 && triggerSpec.trigger && triggerSpec.target;  
-            var has_from = triggerSpec.trigger && triggerSpec.from && (spec_len === 2 || spec_len === 3 && triggerSpec.target) && !(triggerSpec.from !== "document" || triggerSpec.from !== "window");
+            var valid_keys = ["trigger", "target", "from", "consume"];
+            var keys = Object.keys(triggerSpec);
+            var spec_len = keys.length; 
+            if (spec_len > valid_keys.length) {
+                return false;
+            }
+            for (var key of keys) {
+                if (valid_keys.indexOf(key) > -1) {
+                    continue;
+                }
+                return false;
+            }
+            var is_invalid_form = false;
+            if (triggerSpec.from) {
+                is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window" || triggerSpec.from.indexOf("find") === 0 || triggerSpec.from.indexOf("closest") === 0;
+            }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
-            var is_lone_trigger = hasAttribute(elem, "hx-trigger") && (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
-            var is_form_event = triggerSpec.trigger && shouldCancelImpl(triggerSpec.trigger, elem);
-            return (has_trigger || has_target || has_from) && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
+            var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
+            var is_form_event = shouldCancelImpl(triggerSpec.trigger, elem);
+            // console.log("conds", !is_invalid_form, !is_form_event, !is_ext, is_valid_selector)
+            return !is_invalid_form && !is_form_event && !is_ext && is_valid_selector;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
