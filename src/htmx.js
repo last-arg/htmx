@@ -1428,14 +1428,16 @@ return (function () {
         }
 
         function isValidEventForDelegation(triggerSpec, elem) {
+            // TODO: need to make these conditions better in the future 
             var spec_len = Object.keys(triggerSpec).length; 
             var has_trigger = spec_len === 1 && triggerSpec.trigger;  
             var has_target = spec_len === 2 && triggerSpec.trigger && triggerSpec.target;  
+            var has_from = triggerSpec.trigger && triggerSpec.from && (spec_len === 2 || spec_len === 3 && triggerSpec.target) && !(triggerSpec.from !== "document" || triggerSpec.from !== "window");
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
             var is_lone_trigger = hasAttribute(elem, "hx-trigger") && (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
             var is_form_event = triggerSpec.trigger && shouldCancelImpl(triggerSpec.trigger, elem);
-            return (has_trigger || has_target) && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
+            return (has_trigger || has_target || has_from) && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -1529,7 +1531,6 @@ return (function () {
                     on: eltToListenOn
                 })
 
-                console.log("add event", triggerSpec, eltToListenOn)
                 eltToListenOn.addEventListener(triggerSpec.trigger, eventListener);
             });
         }
@@ -1821,7 +1822,6 @@ return (function () {
         }
 
         function addTriggerHandler(elt, triggerSpec, nodeData, handler) {
-            console.log("trig", elt)
             if (triggerSpec.sseEvent) {
                 processSSETrigger(elt, handler, triggerSpec.sseEvent);
             } else if (triggerSpec.trigger === "revealed") {
@@ -1855,7 +1855,6 @@ return (function () {
                 nodeData.polling = true;
                 processPolling(elt, handler, triggerSpec);
             } else {
-                console.log("spec", isValidEventForDelegation(triggerSpec, elt), triggerSpec, elt)
                 if (isValidEventForDelegation(triggerSpec, elt)) {
                     // Don't add simple cases, that are easy to handle with 
                     // event delegation.
@@ -2043,13 +2042,10 @@ return (function () {
         }
 
         function initNode(elt) {
-            console.group("initNode", elt)
-
             if (closest(elt, htmx.config.disableSelector)) {
                 cleanUpElement(elt)
                 return;
             }
-            console.log("triggerEvent", elt)
             var nodeData = getInternalData(elt);
             if (nodeData.initHash !== attributeHash(elt)) {
                 // clean up any previously processed info
@@ -2110,7 +2106,6 @@ return (function () {
                 return;
             }
             initNode(elt);
-            console.log("forEach elements initNode")
             forEach(findElementsToProcess(elt), function(child) { initNode(child) });
             // Because it happens second, the new way of adding onHandlers superseeds the old one
             // i.e. if there are any hx-on:eventName attributes, the hx-on attribute will be ignored
@@ -3827,18 +3822,44 @@ return (function () {
         })
 
         // TODO: have to probably make it 'global'
+        /** @typedef {Object} State
+          * @property {string[]} events
+          * @property {Object.<string, string>} trigger_from
+          */
         var state = {
-            // TODO: there might be more default events
             events: [],
+            // TODO: use Map instead?
             trigger_from: {},
         };
         const attr = "hx-trigger"
 
         /** @param {any[]} triggerSpecs
-         ** @param {Object} state */
+        /** @param {Element} elem
+         ** @param {State} state */
         function initEventDelegation(triggerSpecs, elem, state) {
             for (const spec of triggerSpecs) {
-                if (isValidEventForDelegation(spec, elem) && !state.events.includes(spec.trigger)) {
+                if (!isValidEventForDelegation(spec, elem)) {
+                    continue;
+                }
+                if (spec.from) {
+                    // from:<selector>
+                    // Event trigger can happen anywhere in the site.
+                    // Can't save Element/Node it might be deleted/replaced.
+                    // The element might change.
+                    // Save:
+                    // - event type
+                    // - from <selector>
+                    // - hx-trigger value (part that applies to this event type)
+                    // - Do I have to take 'consume' into account?
+                    var from = state.trigger_from;
+                    console.log(from)
+                    if (!from[spec.trigger]) {
+                        from[spec.trigger] = [spec.from];
+                    } else if (from[spec.trigger].indexOf(spec.from) === -1) {
+                        from[spec.trigger].push(spec.from);
+                    }
+                }
+                if (!state.events.includes(spec.trigger)) {
                     state.events.push(spec.trigger);
                     addDocumentEvent(spec.trigger);
                 }
@@ -3856,11 +3877,17 @@ return (function () {
                 // NOTE: Empty hx-trigger will get click event
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
+            const from = state.trigger_from[evtType];
+            if (from && from.length > 0) {
+                attr_event += "," + from.join(",");
+            }
+            console.log(attr_event)
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
 
         /** @param {string} evt_str */
         function addDocumentEvent(evt_str) {
+            // TODO: make it 'capture = true' ?
             document.addEventListener(evt_str, function(evt) {
                 /** @type {HTMLElement | null} */
                 let elem = evt.target;
@@ -3872,6 +3899,9 @@ return (function () {
                 }
 
 
+                /** @param {Event} evt
+                    @param {HTMLElement} elem
+                */
                 function processHtmxTrigger(evt, elem) {
                     console.group("processHtmxTrigger", elem)
                     const specs = getTriggerSpecs(elem);
@@ -3886,14 +3916,45 @@ return (function () {
                             continue;
                         }
 
-                        // NOTE: currently will only deal with easy events.
-                        // Only will deal with events that have only 'spec.trigger'.
-                        if (!isValidEventForDelegation(spec, elem)) {
+                        if (spec.from) {
                             continue;
                         }
 
+                        var elems = [];
+
+                        if (state.trigger_from[evt.type]) {
+                            for (var selector of state.trigger_from[evt.type]) {
+                                if (matches(elem, selector)) {
+                                    // TODO: add 'data-hx' attribute selectors
+                                    const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
+                                    const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
+                                    // NOTE: Have to make sure that 'event type' and 
+                                    // 'from:' are part of the same rule.
+                                    matched_elems: for (var el of matched_elems) {
+                                        for (var rule of getAttributeValue(el, "hx-trigger").split(",")) {
+                                            rule = rule.trim();
+                                            if (rule.indexOf(evt.type) === 0 && rule.indexOf("from:" + selector, evt.type.length) >= -1) {
+                                                elems.push(el);
+                                                break matched_elems;
+                                            }
+                                        }
+                                    }
+                           
+                                }
+                            }
+                        }
+
+                        if (elems.length === 0) { 
+                            if(!isValidEventForDelegation(spec, elem)) {
+                                continue;
+                            }
+                            elems.push(elem);
+                        }
+                        console.log("elems", elems)
+
+                        // TODO: try moving this higher up after I get 'form:' code working
                         if (spec.target && evt.target) {
-                            if (!matches(evt.target, spec.target)) {
+                            if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
                                 continue;
                             }
                         }
@@ -3923,17 +3984,18 @@ return (function () {
                         if ((getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
                         }
                         
-
-                        forEach(VERBS, function (verb) {
-                            if (hasAttribute(elem,'hx-' + verb)) {
-                                var path = getAttributeValue(elem, 'hx-' + verb);
-                                if (closest(elem, htmx.config.disableSelector)) {
-                                    cleanUpElement(elem)
-                                    return
+                        forEach(elems, function (elem) {
+                            forEach(VERBS, function (verb) {
+                                if (hasAttribute(elem,'hx-' + verb)) {
+                                    var path = getAttributeValue(elem, 'hx-' + verb);
+                                    if (closest(elem, htmx.config.disableSelector)) {
+                                        cleanUpElement(elem)
+                                        return
+                                    }
+                                    console.log("issueAjaxRequest", elem)
+                                    issueAjaxRequest(verb, path, elem, evt)
                                 }
-                                console.log("issueAjaxRequest", elem)
-                                issueAjaxRequest(verb, path, elem, evt)
-                            }
+                            });
                         });
                     }
 
