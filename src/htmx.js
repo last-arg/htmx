@@ -3911,221 +3911,224 @@ return (function () {
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
 
+        /** @param {Event} evt
+          * @param {string} evt_str 
+          */
+
+        function handleEventDelegation(evt, evt_str) {
+            // TODO: See how to handle/ignore from:document.
+            if (evt.target === document) {
+                return;
+            }
+            
+            let elem = /** @type {HTMLElement | null} */ (evt.target);
+            if (!elem) { return; }
+
+            // TODO: do I have to consider event modifiers 'target:' and 
+            // 'from:' in CSS selector?
+            // TODO: have to modify attribute value if it has event 
+            // modifier 'once'. In case 'once' is the only event
+            // remove attribute or just make attribute with empty value?
+            // Empty hx-trigger would indicate that something was there.
+            // Will see what I will do.
+
+            var selector = createEventSelector(evt.type);
+
+            elem = elem.closest(selector);
+            // NOTE: 'evt.cancelBubble' value will become true if 
+            // stop(Immediate)Propagation was called. 
+            // 'evt.bubbles' is read-only value but can something
+            // else changed it?
+            while (elem && evt.bubbles && !evt.cancelBubble) {
+                processHtmxTrigger(evt, elem)                    
+                elem = elem.parentElement?.closest(selector)
+            }
+
+            // Handle 'from:<value>' event modifier. <value> might exist
+            // anywhere on the page. It might not be part of the current
+            // section of tree going up or down.
+            // <value> can be:
+            // - <CSS selector> - above case applies, can be anywhere
+            // - closest <selector> (itself and ancestor)
+            // - find <selector> (chilren)
+            // - document
+            // - window
+            // Last four cases can be found from origin (evt.target).
+
+            /** @param {Event} evt
+                @param {HTMLElement} elem
+            */
+            function processHtmxTrigger(evt, elem) {
+                console.group("processHtmxTrigger", elem)
+                const specs = getTriggerSpecs(elem);
+
+                if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){
+                    evt.preventDefault();
+                }
+
+                for (const spec of specs) {
+                    // Ignore other events types
+                    if (spec.trigger !== evt_str) {
+                        continue;
+                    }
+
+                    if (spec.from) {
+                        continue;
+                    }
+
+                    if (spec.target && evt.target) {
+                        if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
+                            continue;
+                        }
+                    }
+
+                    var elems = [];
+
+                    if (state.trigger_from[evt.type]) {
+                        var trigger_target = state.trigger_target[evt.type]
+                        var self_selectors = ""
+                        // TODO: do I need self here? Don't I just need to
+                        // check on 'elem'? And that is done above here
+                        // by spec.target.
+                        if (trigger_target && trigger_target["self"]) {
+                            self_selectors = trigger_target["self"].join(",");
+                        }
+                        for (var selector of state.trigger_from[evt.type]) {
+                            console.log(elem, selector)
+                            if (matches(elem, selector)) {
+                                var target_selectors = self_selectors;
+                                console.log("trigger_target", trigger_target);
+                                if (trigger_target && trigger_target[selector]) {
+                                    target_selectors += trigger_target[selector].join(",");
+                                }
+                                // TODO: add 'data-hx' attribute selectors
+                                const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
+                                // ajax request elem
+                                const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
+                                // NOTE: Have to make sure that 'event type' and 
+                                // 'from:' are part of the same rule.
+                                matched_elems: for (var el of matched_elems) {
+                                    if (target_selectors.length > 0 && !matches(evt.target, target_selectors)) {
+                                       continue; 
+                                    }
+
+                                    for (var rule of getAttributeValue(el, "hx-trigger").split(",")) {
+                                        rule = rule.trim();
+                                        if (rule.indexOf(evt.type) === 0 && rule.indexOf("from:" + selector, evt.type.length) >= -1) {
+                                            elems.push(el);
+                                            continue matched_elems;
+                                        }
+                                    }
+                                }
+                       
+                            }
+                        }
+                    }
+
+                    if (elems.length === 0) { 
+                        if(!isValidEventForDelegation(spec, elem)) {
+                            continue;
+                        }
+                        elems.push(elem);
+                    }
+                    console.log("elems", elems)
+                    console.log("target", evt.target)
+
+                    if (spec.consume) {
+                        evt.stopPropagation();
+                    }
+
+                    // Can I always assume 'document' and 'window' are true?
+                    // Althought between evt.target and document/window
+                    // might be a call to evt.stopPropagation. Have to 
+                    // consider this. Would basically have to check if
+                    // there is evt.type with consume. Make sure 
+                    // consume doesn't have 'from:' that might apply to 
+                    // some other section of the tree.
+
+                    // Currently not used because validEventDelegation
+                    // if (spec.from) {
+                    //     if (!hasValidFrom(elem, spec.from)) {
+                    //         continue;
+                    //     }
+                    // }
+
+                    triggerEvent(elem, 'htmx:trigger')
+
+                    if ((getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
+                    }
+                    
+                    forEach(elems, function (elem) {
+                        forEach(VERBS, function (verb) {
+                            if (hasAttribute(elem,'hx-' + verb)) {
+                                var path = getAttributeValue(elem, 'hx-' + verb);
+                                if (closest(elem, htmx.config.disableSelector)) {
+                                    cleanUpElement(elem)
+                                    return
+                                }
+                                console.log("issueAjaxRequest", elem)
+                                issueAjaxRequest(verb, path, elem, evt)
+                            }
+                        });
+                    });
+                }
+
+                // TODO: need to handle form stuff differently
+                var is_form_events = evt.type === "click" || evt.type === "focusin" || evt.type === "focusout";
+                if (is_form_events && elem.tagName === "FORM" || (getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
+                    var form = resolveTarget("#" + getRawAttribute(elem, "form")) || closest(elem, "form")
+                    if (!form) {
+                        return
+                    }
+
+                    // need to handle both click and focus in:
+                    //   focusin - in case someone tabs in to a button and hits the space bar
+                    //   click - on OSX buttons do not focus on click see https://bugs.webkit.org/show_bug.cgi?id=13724
+                    if (evt.type === "click" || evt.type === "focusin") {
+                        if (elem.matches("button, input[type='submit']")) {
+                            var internalData = getInternalData(form);
+                            internalData.lastButtonClicked = elem;
+                        }
+                    } else if (evt.type === "focusout") {
+                        var internalData = getInternalData(form);
+                        internalData.lastButtonClicked = null;
+                    }
+                }
+
+                console.groupEnd();    
+            }
+
+            function hasValidFrom(elem, from) {
+                if (from.indexOf("closest ") === 0) {
+                    // TODO: have to make sure there is no 'consume'
+                    // event modifier between current element and
+                    // closest element
+                    return !!closest(elem, normalizeSelector(from.substr(8)));
+                } else if (from.indexOf("find ") === 0) {
+                    // Should not have the same problem as 'closest' because
+                    // I am sure that there was no consume/stopPropagation.
+                    // I have already walked and checked the tree.
+                    // TODO: use Node.contains instead. Could right 
+                    // polyfill also using querySelector.
+                    // TODO: This executes event too late. Have to execute
+                    // when child element is found in DOM (when walking
+                    // up the tree). Best option maybe would be to gather
+                    // all 'find' selectors.
+                    return !!getDocument().querySelector(normalizeSelector(from.substr(5)));
+                } else if (from === 'document') {
+                    // TODO: same as closest
+                    return document;
+                } else if (from === 'window') {
+                    // TODO: same as closest
+                    return window;
+                } 
+                return false;
+            }
+        }
+
         /** @param {string} evt_str */
         function addDocumentEvent(evt_str) {
-            // TODO: make it 'capture = true' ?
-            document.addEventListener(evt_str, function(evt) {
-                /** @type {HTMLElement | null} */
-                let elem = evt.target;
-                if (!elem) { return; }
-
-                // TODO: See how to handle/ignore from:document.
-                if (elem === document) {
-                    return;
-                }
-
-
-                /** @param {Event} evt
-                    @param {HTMLElement} elem
-                */
-                function processHtmxTrigger(evt, elem) {
-                    console.group("processHtmxTrigger", elem)
-                    const specs = getTriggerSpecs(elem);
-
-                    if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){
-                        evt.preventDefault();
-                    }
-
-                    for (const spec of specs) {
-                        // Ignore other events types
-                        if (spec.trigger !== evt_str) {
-                            continue;
-                        }
-
-                        if (spec.from) {
-                            continue;
-                        }
-
-                        if (spec.target && evt.target) {
-                            if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
-                                continue;
-                            }
-                        }
-
-                        var elems = [];
-
-                        if (state.trigger_from[evt.type]) {
-                            var trigger_target = state.trigger_target[evt.type]
-                            var self_selectors = ""
-                            // TODO: do I need self here? Don't I just need to
-                            // check on 'elem'? And that is done above here
-                            // by spec.target.
-                            if (trigger_target && trigger_target["self"]) {
-                                self_selectors = trigger_target["self"].join(",");
-                            }
-                            for (var selector of state.trigger_from[evt.type]) {
-                                console.log(elem, selector)
-                                if (matches(elem, selector)) {
-                                    var target_selectors = self_selectors.slice(0);
-                                    console.log("trigger_target", trigger_target);
-                                    if (trigger_target && trigger_target[selector]) {
-                                        target_selectors += trigger_target[selector].join(",");
-                                    }
-                                    // TODO: add 'data-hx' attribute selectors
-                                    const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
-                                    // ajax request elem
-                                    const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
-                                    // NOTE: Have to make sure that 'event type' and 
-                                    // 'from:' are part of the same rule.
-                                    matched_elems: for (var el of matched_elems) {
-                                        if (target_selectors.length > 0 && !matches(evt.target, target_selectors)) {
-                                           continue; 
-                                        }
-
-                                        for (var rule of getAttributeValue(el, "hx-trigger").split(",")) {
-                                            rule = rule.trim();
-                                            if (rule.indexOf(evt.type) === 0 && rule.indexOf("from:" + selector, evt.type.length) >= -1) {
-                                                elems.push(el);
-                                                continue matched_elems;
-                                            }
-                                        }
-                                    }
-                           
-                                }
-                            }
-                        }
-
-                        if (elems.length === 0) { 
-                            if(!isValidEventForDelegation(spec, elem)) {
-                                continue;
-                            }
-                            elems.push(elem);
-                        }
-                        console.log("elems", elems)
-                        console.log("target", evt.target)
-
-                        if (spec.consume) {
-                            evt.stopPropagation();
-                        }
-
-                        // Can I always assume 'document' and 'window' are true?
-                        // Althought between evt.target and document/window
-                        // might be a call to evt.stopPropagation. Have to 
-                        // consider this. Would basically have to check if
-                        // there is evt.type with consume. Make sure 
-                        // consume doesn't have 'from:' that might apply to 
-                        // some other section of the tree.
-
-                        // Currently not used because validEventDelegation
-                        // if (spec.from) {
-                        //     if (!hasValidFrom(elem, spec.from)) {
-                        //         continue;
-                        //     }
-                        // }
-
-                        triggerEvent(elem, 'htmx:trigger')
-
-                        if ((getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
-                        }
-                        
-                        forEach(elems, function (elem) {
-                            forEach(VERBS, function (verb) {
-                                if (hasAttribute(elem,'hx-' + verb)) {
-                                    var path = getAttributeValue(elem, 'hx-' + verb);
-                                    if (closest(elem, htmx.config.disableSelector)) {
-                                        cleanUpElement(elem)
-                                        return
-                                    }
-                                    console.log("issueAjaxRequest", elem)
-                                    issueAjaxRequest(verb, path, elem, evt)
-                                }
-                            });
-                        });
-                    }
-
-                    // TODO: need to handle form stuff differently
-                    var is_form_events = evt.type === "click" || evt.type === "focusin" || evt.type === "focusout";
-                    if (is_form_events && elem.tagName === "FORM" || (getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
-                        var form = resolveTarget("#" + getRawAttribute(elem, "form")) || closest(elem, "form")
-                        if (!form) {
-                            return
-                        }
-
-                        // need to handle both click and focus in:
-                        //   focusin - in case someone tabs in to a button and hits the space bar
-                        //   click - on OSX buttons do not focus on click see https://bugs.webkit.org/show_bug.cgi?id=13724
-                        if (evt.type === "click" || evt.type === "focusin") {
-                            if (elem.matches("button, input[type='submit']")) {
-                                var internalData = getInternalData(form);
-                                internalData.lastButtonClicked = elem;
-                            }
-                        } else if (evt.type === "focusout") {
-                            var internalData = getInternalData(form);
-                            internalData.lastButtonClicked = null;
-                        }
-                    }
-
-                    console.groupEnd();    
-                }
-
-                function hasValidFrom(elem, from) {
-                    if (from.indexOf("closest ") === 0) {
-                        // TODO: have to make sure there is no 'consume'
-                        // event modifier between current element and
-                        // closest element
-                        return !!closest(elem, normalizeSelector(from.substr(8)));
-                    } else if (from.indexOf("find ") === 0) {
-                        // Should not have the same problem as 'closest' because
-                        // I am sure that there was no consume/stopPropagation.
-                        // I have already walked and checked the tree.
-                        // TODO: use Node.contains instead. Could right 
-                        // polyfill also using querySelector.
-                        // TODO: This executes event too late. Have to execute
-                        // when child element is found in DOM (when walking
-                        // up the tree). Best option maybe would be to gather
-                        // all 'find' selectors.
-                        return !!getDocument().querySelector(normalizeSelector(from.substr(5)));
-                    } else if (from === 'document') {
-                        // TODO: same as closest
-                        return document;
-                    } else if (from === 'window') {
-                        // TODO: same as closest
-                        return window;
-                    } 
-                    return false;
-                }
-                
-                // TODO: do I have to consider event modifiers 'target:' and 
-                // 'from:' in CSS selector?
-                // TODO: have to modify attribute value if it has event 
-                // modifier 'once'. In case 'once' is the only event
-                // remove attribute or just make attribute with empty value?
-                // Empty hx-trigger would indicate that something was there.
-                // Will see what I will do.
-
-                var selector = createEventSelector(evt.type);
-
-                elem = elem.closest(selector);
-                // NOTE: 'evt.cancelBubble' value will become true if 
-                // stop(Immediate)Propagation was called. 
-                // 'evt.bubbles' is read-only value but can something
-                // else changed it?
-                while (elem && evt.bubbles && !evt.cancelBubble) {
-                    processHtmxTrigger(evt, elem)                    
-                    elem = elem.parentElement?.closest(selector)
-                }
-
-                // Handle 'from:<value>' event modifier. <value> might exist
-                // anywhere on the page. It might not be part of the current
-                // section of tree going up or down.
-                // <value> can be:
-                // - <CSS selector> - above case applies, can be anywhere
-                // - closest <selector> (itself and ancestor)
-                // - find <selector> (chilren)
-                // - document
-                // - window
-                // Last four cases can be found from origin (evt.target).
-            }, true)    
+            getDocument().addEventListener(evt_str, function(evt) { handleEventDelegation(evt, evt_str) }, true);
         }
         
         return htmx;
