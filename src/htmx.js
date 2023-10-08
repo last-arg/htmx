@@ -1443,7 +1443,7 @@ return (function () {
             }
             var is_invalid_form = false;
             if (triggerSpec.from) {
-                is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window" || triggerSpec.from.indexOf("find") === 0 || triggerSpec.from.indexOf("closest") === 0;
+                is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window" || triggerSpec.from.indexOf("find") === 0;
             }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
@@ -3875,9 +3875,9 @@ return (function () {
                     if (spec.from.indexOf("closest") === 0) {
                         var closest = state.modifier.from.closest;
                         if (!closest[spec.trigger]) {
-                            closest[spec.trigger] = [spec.from.slice(7)];
+                            closest[spec.trigger] = [spec.from.slice(8)];
                         } else {
-                            closest[spec.trigger].push(spec.from.slice(7));
+                            closest[spec.trigger].push(spec.from.slice(8));
                         }
                     } else {
                         var selector = state.modifier.from.selector;
@@ -4013,7 +4013,6 @@ return (function () {
                     var from_selector = state.modifier.from.selector;
                     if (from_selector[evt.type]) {
                         for (var selector of from_selector[evt.type]) {
-                            console.log(elem, selector)
                             if (!matches(elem, selector)) {
                                 continue;
                             }
@@ -4023,6 +4022,41 @@ return (function () {
                             const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
                             for (var el of matched_elems) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:") === -1) {
+                                    continue;
+                                }
+
+                                for (var rule of getTriggerSpecs(el)) {
+                                    if (evt.type !== rule.trigger || rule.from === undefined) {
+                                        continue;
+                                    }
+                                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
+                                        continue;
+                                    }
+                                    // TODO: need to check rule.consume?
+                                    elems.push(el);
+                                }
+                            }
+                        }
+                    }
+
+                    var from_closest = state.modifier.from.closest;
+                    if (from_closest[evt.type]) {
+                        for (var selector of from_closest[evt.type]) {
+                            console.log(elem, selector)
+                            if (!matches(elem, selector)) {
+                                continue;
+                            }
+                            // TODO: add 'data-hx' attribute selectors
+                            const match = selector + " [hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:closest " + selector + "']";
+                            // ajax request elem
+                            const matched_elems = toArray(querySelectorAllExt(elem, match));
+                            for (var el of matched_elems) {
+                                if (getAttributeValue(el, "hx-trigger").indexOf("from:closest") === -1) {
+                                    continue;
+                                }
+
+                                // Make sure it is the closest 'selector'
+                                if (closest(el, selector) !== elem) {
                                     continue;
                                 }
 
@@ -4070,9 +4104,6 @@ return (function () {
 
                     triggerEvent(elem, 'htmx:trigger')
 
-                    if ((getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
-                    }
-                    
                     forEach(elems, function (elem) {
                         forEach(VERBS, function (verb) {
                             if (hasAttribute(elem,'hx-' + verb)) {
