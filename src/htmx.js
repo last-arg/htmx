@@ -3921,7 +3921,6 @@ return (function () {
         // TODO: could construct this conditionally
         // - submit events require certain elements
         function createEventSelector(evtType) {
-            var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
             var attr_event = `[${attr}*=${evtType}],[data-${attr}*=${evtType}]`;
             if (evtType === "click") {
                 // NOTE: Empty hx-trigger will get click event
@@ -3930,21 +3929,19 @@ return (function () {
                 // is no ajax action to take (i.e. no hx-get, hx-post, ...).
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
-            var from_selector = state.modifier.from.selector[evtType];
-            if (from_selector && from_selector.length > 0) {
-                attr_event += "," + from_selector.join(",");
-            }
 
-            var from_find = state.modifier.from.closest[evtType];
-            if (from_find && from_find.length > 0) {
-                attr_event += "," + from_find.join(",");
-            }
+            attr_event += modifierSelector(state.modifier.from.selector[evtType]);
+            attr_event += modifierSelector(state.modifier.from.closest[evtType]);
+            attr_event += modifierSelector(state.modifier.from.find[evtType]);
 
-            var from_find = state.modifier.from.find[evtType];
-            if (from_find && from_find.length > 0) {
-                attr_event += "," + from_find.join(",");
+            function modifierSelector(modifier) {
+                if (modifier && modifier.length > 0) {
+                    return "," + modifier.join(",");
+                }
+                return "";
             }
             
+            var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
 
