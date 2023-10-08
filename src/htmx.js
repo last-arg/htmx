@@ -4017,10 +4017,8 @@ return (function () {
                                 continue;
                             }
                             // TODO: add 'data-hx' attribute selectors
-                            const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
-                            // ajax request elem
-                            const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
-                            for (var el of matched_elems) {
+                            var match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
+                            for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:") === -1) {
                                     continue;
                                 }
@@ -4047,10 +4045,8 @@ return (function () {
                                 continue;
                             }
                             // TODO: add 'data-hx' attribute selectors
-                            const match = selector + " [hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:closest " + selector + "']";
-                            // ajax request elem
-                            const matched_elems = toArray(querySelectorAllExt(elem, match));
-                            for (var el of matched_elems) {
+                            var match = selector + " [hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:closest " + selector + "']";
+                            for (var el of toArray(querySelectorAllExt(elem, match))) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:closest") === -1) {
                                     continue;
                                 }
