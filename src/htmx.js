@@ -1443,7 +1443,7 @@ return (function () {
             }
             var is_invalid_form = false;
             if (triggerSpec.from) {
-                is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window" || triggerSpec.from.indexOf("find") === 0;
+                is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window";
             }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
@@ -3879,6 +3879,13 @@ return (function () {
                         } else {
                             closest[spec.trigger].push(spec.from.slice(8));
                         }
+                    } else if (spec.from.indexOf("find") === 0) {
+                        var find = state.modifier.from.find;
+                        if (!find[spec.trigger]) {
+                            find[spec.trigger] = [spec.from.slice(5)];
+                        } else {
+                            find[spec.trigger].push(spec.from.slice(5))
+                        }
                     } else {
                         var selector = state.modifier.from.selector;
                         if (!selector[spec.trigger]) {
@@ -3928,10 +3935,16 @@ return (function () {
                 attr_event += "," + from_selector.join(",");
             }
 
-            var from_closest = state.modifier.from.closest[evtType];
-            if (from_closest && from_closest.length > 0) {
-                attr_event += "," + from_closest.join(",");
+            var from_find = state.modifier.from.closest[evtType];
+            if (from_find && from_find.length > 0) {
+                attr_event += "," + from_find.join(",");
             }
+
+            var from_find = state.modifier.from.find[evtType];
+            if (from_find && from_find.length > 0) {
+                attr_event += "," + from_find.join(",");
+            }
+            
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
 
@@ -3958,7 +3971,7 @@ return (function () {
 
             var selector = createEventSelector(evt.type);
 
-            elem = elem.closest(selector);
+            elem = closest(elem, selector);
             // NOTE: 'evt.cancelBubble' value will become true if 
             // stop(Immediate)Propagation was called. 
             // 'evt.bubbles' is read-only value but can something
@@ -3983,7 +3996,7 @@ return (function () {
                 @param {HTMLElement} elem
             */
             function processHtmxTrigger(evt, elem) {
-                console.group("processHtmxTrigger", elem)
+                console.group("processHtmxTrigger", elem, evt.target)
                 const specs = getTriggerSpecs(elem);
 
                 if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){
@@ -4030,6 +4043,9 @@ return (function () {
                                     if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
                                         continue;
                                     }
+                                    if (rule.from.indexOf(selector) === -1) {
+                                        continue
+                                    }
                                     // TODO: need to check rule.consume?
                                     elems.push(el);
                                 }
@@ -4040,7 +4056,6 @@ return (function () {
                     var from_closest = state.modifier.from.closest;
                     if (from_closest[evt.type]) {
                         for (var selector of from_closest[evt.type]) {
-                            console.log(elem, selector)
                             if (!matches(elem, selector)) {
                                 continue;
                             }
@@ -4063,8 +4078,46 @@ return (function () {
                                     if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
                                         continue;
                                     }
+                                    if (rule.from.indexOf(selector) === -1) {
+                                        continue
+                                    }
                                     // TODO: need to check rule.consume?
                                     elems.push(el);
+                                }
+                            }
+                        }
+                    }
+
+                    var from_find = state.modifier.from.find;
+                    if (from_find[evt.type] && elem.parentElement) {
+                        for (var selector of from_find[evt.type]) {
+                            if (!matches(elem, selector)) {
+                                continue;
+                            }
+                            // TODO: add 'data-hx' attribute selectors
+                            var match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:find " + selector + "']";
+                            var elem_closest = elem;
+                            while (elem_closest.parentElement) {
+                                elem_closest = closest(elem_closest.parentElement, match);
+                                if (!elem_closest) {
+                                    break;
+                                }
+                                if (getAttributeValue(elem_closest, "hx-trigger").indexOf("from:find") === -1) {
+                                    continue;
+                                }
+
+                                for (var rule of getTriggerSpecs(elem_closest)) {
+                                    if (evt.type !== rule.trigger || rule.from === undefined) {
+                                        continue;
+                                    }
+                                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
+                                        continue;
+                                    }
+                                    if (rule.from.indexOf(selector) === -1) {
+                                        continue
+                                    }
+                                    // TODO: need to check rule.consume?
+                                    elems.push(elem_closest);
                                 }
                             }
                         }
@@ -4098,9 +4151,9 @@ return (function () {
                     //     }
                     // }
 
-                    triggerEvent(elem, 'htmx:trigger')
 
                     forEach(elems, function (elem) {
+                        triggerEvent(elem, 'htmx:trigger')
                         forEach(VERBS, function (verb) {
                             if (hasAttribute(elem,'hx-' + verb)) {
                                 var path = getAttributeValue(elem, 'hx-' + verb);
