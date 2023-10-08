@@ -3832,17 +3832,25 @@ return (function () {
             }, 0);
         })
 
+        /** @typedef {Object<'selector' | 'find' | 'closest', Object<string, string[]>>} ModifierFrom */
+        /** @typedef {Object<string, string[]>} ModifierTarget */
+
         // TODO: have to probably make it 'global'
         /** @typedef {Object} State
           * @property {string[]} events
-          * @property {Object.<string, string>} trigger_from
-          * @property {Object.<string, string>} trigger_target
+          * @property {Object.<'from', ModifierFrom> | Object.<'target', ModifierTarget>} modifier
           */
         var state = {
             events: [],
             // TODO: use Map instead?
-            trigger_from: {},
-            trigger_target: {},
+            modifier: {
+                from: {
+                    selector: {},
+                    find: {},
+                    closest: {},
+                },
+                target: { }
+            }
         };
         const attr = "hx-trigger"
 
@@ -3864,16 +3872,15 @@ return (function () {
                     // - from <selector>
                     // - hx-trigger value (part that applies to this event type)
                     // - Do I have to take 'consume' into account?
-                    var from = state.trigger_from;
-                    console.log("add", spec.from)
-                    if (!from[spec.trigger]) {
-                        from[spec.trigger] = [spec.from];
-                    } else if (from[spec.trigger].indexOf(spec.from) === -1) {
-                        from[spec.trigger].push(spec.from);
+                    var selector = state.modifier.from.selector;
+                    if (!selector[spec.trigger]) {
+                        selector[spec.trigger] = [spec.from];
+                    } else if (selector[spec.trigger].indexOf(spec.from) === -1) {
+                        selector[spec.trigger].push(spec.from);
                     }
                 }
                 if (spec.target) {
-                    var target = state.trigger_target;
+                    var target = state.modifier.target;
                     if (!target[spec.trigger]) {
                         target[spec.trigger] = {};
                     }
@@ -3905,9 +3912,9 @@ return (function () {
                 // is no ajax action to take (i.e. no hx-get, hx-post, ...).
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
-            const from = state.trigger_from[evtType];
-            if (from && from.length > 0) {
-                attr_event += "," + from.join(",");
+            const from_selector = state.modifier.from.selector[evtType];
+            if (from_selector && from_selector.length > 0) {
+                attr_event += "," + from_selector.join(",");
             }
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
@@ -3985,8 +3992,9 @@ return (function () {
 
                     var elems = [];
 
-                    if (state.trigger_from[evt.type]) {
-                        var trigger_target = state.trigger_target[evt.type]
+                    var from_selector = state.modifier.from.selector;
+                    if (from_selector[evt.type]) {
+                        var trigger_target = state.modifier.target[evt.type]
                         var self_selectors = ""
                         // TODO: do I need self here? Don't I just need to
                         // check on 'elem'? And that is done above here
@@ -3994,7 +4002,7 @@ return (function () {
                         if (trigger_target && trigger_target["self"]) {
                             self_selectors = trigger_target["self"].join(",");
                         }
-                        for (var selector of state.trigger_from[evt.type]) {
+                        for (var selector of from_selector[evt.type]) {
                             console.log(elem, selector)
                             if (matches(elem, selector)) {
                                 var target_selectors = self_selectors;
@@ -4009,7 +4017,7 @@ return (function () {
                                 // NOTE: Have to make sure that 'event type' and 
                                 // 'from:' are part of the same rule.
                                 matched_elems: for (var el of matched_elems) {
-                                    if (target_selectors.length > 0 && !matches(evt.target, target_selectors)) {
+                                    if (target_selectors.length > 0 && !matches(/** @type HTMLElement */(evt.target), target_selectors)) {
                                        continue; 
                                     }
 
