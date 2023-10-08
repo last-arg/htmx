@@ -3838,7 +3838,7 @@ return (function () {
         // TODO: have to probably make it 'global'
         /** @typedef {Object} State
           * @property {string[]} events
-          * @property {Object.<'from', ModifierFrom> | Object.<'target', ModifierTarget>} modifier
+          * @property {Object.<'from', ModifierFrom> & Object.<'target', ModifierTarget>} modifier
           */
         var state = {
             events: [],
@@ -3872,23 +3872,34 @@ return (function () {
                     // - from <selector>
                     // - hx-trigger value (part that applies to this event type)
                     // - Do I have to take 'consume' into account?
-                    var selector = state.modifier.from.selector;
-                    if (!selector[spec.trigger]) {
-                        selector[spec.trigger] = [spec.from];
-                    } else if (selector[spec.trigger].indexOf(spec.from) === -1) {
-                        selector[spec.trigger].push(spec.from);
+                    if (spec.from.indexOf("closest") === 0) {
+                        var closest = state.modifier.from.closest;
+                        if (!closest[spec.trigger]) {
+                            closest[spec.trigger] = [spec.from.slice(7)];
+                        } else {
+                            closest[spec.trigger].push(spec.from.slice(7));
+                        }
+                    } else {
+                        var selector = state.modifier.from.selector;
+                        if (!selector[spec.trigger]) {
+                            selector[spec.trigger] = [spec.from];
+                        } else if (selector[spec.trigger].indexOf(spec.from) === -1) {
+                            selector[spec.trigger].push(spec.from);
+                        }
                     }
-                }
-                if (spec.target) {
-                    var target = state.modifier.target;
-                    if (!target[spec.trigger]) {
-                        target[spec.trigger] = {};
-                    }
-                    var bucket = spec.from ? spec.from : "self";
-                    if (!target[spec.trigger][bucket]) {
-                        target[spec.trigger][bucket] = [spec.target];
-                    } else if (target[spec.trigger][bucket].indexOf(spec.target) === -1) {
-                        target[spec.trigger][bucket].push(spec.target);
+
+                    // Need target only if there is also 'form' modifier
+                    if (spec.target) {
+                        var target = state.modifier.target;
+                        if (!target[spec.trigger]) {
+                            target[spec.trigger] = {};
+                        }
+                        var bucket = spec.from;
+                        if (!target[spec.trigger][bucket]) {
+                            target[spec.trigger][bucket] = [spec.target];
+                        } else if (target[spec.trigger][bucket].indexOf(spec.target) === -1) {
+                            target[spec.trigger][bucket].push(spec.target);
+                        }
                     }
                 }
                 if (!state.events.includes(spec.trigger)) {
@@ -3912,9 +3923,14 @@ return (function () {
                 // is no ajax action to take (i.e. no hx-get, hx-post, ...).
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
-            const from_selector = state.modifier.from.selector[evtType];
+            var from_selector = state.modifier.from.selector[evtType];
             if (from_selector && from_selector.length > 0) {
                 attr_event += "," + from_selector.join(",");
+            }
+
+            var from_closest = state.modifier.from.closest[evtType];
+            if (from_closest && from_closest.length > 0) {
+                attr_event += "," + from_closest.join(",");
             }
             return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
         }
@@ -3974,6 +3990,8 @@ return (function () {
                     evt.preventDefault();
                 }
 
+                // TODO: if no spec (hx-trigger) can assume hx-trigger 'from'
+                // has been used?
                 for (const spec of specs) {
                     // Ignore other events types
                     if (spec.trigger !== evt_str) {
@@ -3994,42 +4012,30 @@ return (function () {
 
                     var from_selector = state.modifier.from.selector;
                     if (from_selector[evt.type]) {
-                        var trigger_target = state.modifier.target[evt.type]
-                        var self_selectors = ""
-                        // TODO: do I need self here? Don't I just need to
-                        // check on 'elem'? And that is done above here
-                        // by spec.target.
-                        if (trigger_target && trigger_target["self"]) {
-                            self_selectors = trigger_target["self"].join(",");
-                        }
                         for (var selector of from_selector[evt.type]) {
                             console.log(elem, selector)
-                            if (matches(elem, selector)) {
-                                var target_selectors = self_selectors;
-                                console.log("trigger_target", trigger_target);
-                                if (trigger_target && trigger_target[selector]) {
-                                    target_selectors += trigger_target[selector].join(",");
+                            if (!matches(elem, selector)) {
+                                continue;
+                            }
+                            // TODO: add 'data-hx' attribute selectors
+                            const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
+                            // ajax request elem
+                            const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
+                            for (var el of matched_elems) {
+                                if (getAttributeValue(el, "hx-trigger").indexOf("from:") === -1) {
+                                    continue;
                                 }
-                                // TODO: add 'data-hx' attribute selectors
-                                const match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
-                                // ajax request elem
-                                const matched_elems = toArray(querySelectorAllExt(getDocument(), match));
-                                // NOTE: Have to make sure that 'event type' and 
-                                // 'from:' are part of the same rule.
-                                matched_elems: for (var el of matched_elems) {
-                                    if (target_selectors.length > 0 && !matches(/** @type HTMLElement */(evt.target), target_selectors)) {
-                                       continue; 
-                                    }
 
-                                    for (var rule of getAttributeValue(el, "hx-trigger").split(",")) {
-                                        rule = rule.trim();
-                                        if (rule.indexOf(evt.type) === 0 && rule.indexOf("from:" + selector, evt.type.length) >= -1) {
-                                            elems.push(el);
-                                            continue matched_elems;
-                                        }
+                                for (var rule of getTriggerSpecs(el)) {
+                                    if (evt.type !== rule.trigger || rule.from === undefined) {
+                                        continue;
                                     }
+                                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
+                                        continue;
+                                    }
+                                    // TODO: need to check rule.consume?
+                                    elems.push(el);
                                 }
-                       
                             }
                         }
                     }
