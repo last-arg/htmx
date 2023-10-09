@@ -1449,13 +1449,16 @@ return (function () {
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
             // This is more to detect extension elements
             var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
+            // TODO: event delegate form events (submit)?
             var is_form_event = shouldCancelImpl(triggerSpec.trigger, elem);
             // console.log("conds", !is_invalid_form, !is_form_event, !is_ext, is_valid_selector)
             return !is_invalid_form && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
+            console.log("add-event", elt, handler, nodeData, triggerSpec, explicitCancel)
             var elementData = getInternalData(elt);
+            console.log("elem-data", elementData)
             var eltsToListenOn;
             if (triggerSpec.from) {
                 eltsToListenOn = querySelectorAllExt(elt, triggerSpec.from);
@@ -3978,6 +3981,24 @@ return (function () {
                 elem = elem.parentElement?.closest(selector)
             }
 
+            function filterElems(out_elems, el, evt_target, selector) {
+                for (var rule of getTriggerSpecs(el)) {
+                    if (evt.type !== rule.trigger || rule.from === undefined) {
+                        continue;
+                    }
+                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt_target), rule.target)) {
+                        continue;
+                    }
+                    if (rule.from.indexOf(selector) === -1) {
+                        continue
+                    }
+                    // TODO: need to check rule.consume?
+                    out_elems.push(el);
+                }
+                
+                return out_elems;
+            }
+
             // Handle 'from:<value>' event modifier. <value> might exist
             // anywhere on the page. It might not be part of the current
             // section of tree going up or down.
@@ -4033,19 +4054,7 @@ return (function () {
                                     continue;
                                 }
 
-                                for (var rule of getTriggerSpecs(el)) {
-                                    if (evt.type !== rule.trigger || rule.from === undefined) {
-                                        continue;
-                                    }
-                                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
-                                        continue;
-                                    }
-                                    if (rule.from.indexOf(selector) === -1) {
-                                        continue
-                                    }
-                                    // TODO: need to check rule.consume?
-                                    elems.push(el);
-                                }
+                                filterElems(elems, el, evt.target, selector);
                             }
                         }
                     }
@@ -4068,19 +4077,7 @@ return (function () {
                                     continue;
                                 }
 
-                                for (var rule of getTriggerSpecs(el)) {
-                                    if (evt.type !== rule.trigger || rule.from === undefined) {
-                                        continue;
-                                    }
-                                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
-                                        continue;
-                                    }
-                                    if (rule.from.indexOf(selector) === -1) {
-                                        continue
-                                    }
-                                    // TODO: need to check rule.consume?
-                                    elems.push(el);
-                                }
+                                filterElems(elems, el, evt.target, selector);
                             }
                         }
                     }
@@ -4103,19 +4100,7 @@ return (function () {
                                     continue;
                                 }
 
-                                for (var rule of getTriggerSpecs(elem_closest)) {
-                                    if (evt.type !== rule.trigger || rule.from === undefined) {
-                                        continue;
-                                    }
-                                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
-                                        continue;
-                                    }
-                                    if (rule.from.indexOf(selector) === -1) {
-                                        continue
-                                    }
-                                    // TODO: need to check rule.consume?
-                                    elems.push(elem_closest);
-                                }
+                                filterElems(elems, el, evt.target, selector);
                             }
                         }
                     }
