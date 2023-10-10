@@ -3999,6 +3999,10 @@ return (function () {
                 return out_elems;
             }
 
+            /**
+              @param {string} evt_type
+              @param {string} selector
+            */
             function hxTriggerSelector(evt_type, selector) {
                 var parent = "";
                 if (selector.indexOf("closest") === 0) {
