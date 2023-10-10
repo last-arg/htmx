@@ -4100,7 +4100,7 @@ return (function () {
                                     continue;
                                 }
 
-                                filterElems(elems, el, evt.target, selector);
+                                filterElems(elems, elem_closest, evt.target, selector);
                             }
                         }
                     }
@@ -4111,8 +4111,6 @@ return (function () {
                         }
                         elems.push(elem);
                     }
-                    console.log("elems", elems)
-                    console.log("target", evt.target)
 
                     if (spec.consume) {
                         evt.stopPropagation();
