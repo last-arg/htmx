@@ -3923,8 +3923,11 @@ return (function () {
 
         // TODO: could construct this conditionally
         // - submit events require certain elements
+        /**
+            @param {string} evtType
+        */
         function createEventSelector(evtType) {
-            var attr_event = `[${attr}*=${evtType}],[data-${attr}*=${evtType}]`;
+            var attr_event = "[" + attr + "*=" + evtType + "],[data-" + attr + "*=" + evtType + "]";
             if (evtType === "click") {
                 // NOTE: Empty hx-trigger will get click event
                 // Althought empty hx-trigger event callback doesn't do anything.
@@ -3933,8 +3936,14 @@ return (function () {
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
 
+            console.log("state", state.modifier.from)
             attr_event += modifierSelector(state.modifier.from.selector[evtType]);
             attr_event += modifierSelector(state.modifier.from.closest[evtType]);
+            // var out = "";
+            // for (var selector of state.modifier.from.closest[evtType]) {
+            //     out += selector + " ";
+            // }
+            // console.log("out", out)
             attr_event += modifierSelector(state.modifier.from.find[evtType]);
 
             function modifierSelector(modifier) {
@@ -4003,7 +4012,7 @@ return (function () {
               @param {string} evt_type
               @param {string} selector
             */
-            function hxTriggerSelector(evt_type, selector) {
+            function hxTriggerFromSelector(evt_type, selector) {
                 var parent = "";
                 if (selector.indexOf("closest") === 0) {
                     parent = selector.slice(8) + " ";
@@ -4028,21 +4037,18 @@ return (function () {
             */
             function processHtmxTrigger(evt, elem) {
                 console.group("processHtmxTrigger", elem, evt.target)
-                const specs = getTriggerSpecs(elem);
 
                 if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){
                     evt.preventDefault();
                 }
 
-                // TODO: if no spec (hx-trigger) can assume hx-trigger 'from'
-                // has been used?
-                for (const spec of specs) {
-                    // Ignore other events types
-                    if (spec.trigger !== evt_str) {
-                        continue;
-                    }
+                // TODO: should I bring state.modifier.from loops outside of
+                // 'getTriggerSpecs' loop
 
-                    if (spec.from) {
+                // TODO: if no spec (hx-trigger) can assume hx-trigger 'from'
+                // has been used? Default trigger spec is 'click'
+                for (const spec of getTriggerSpecs(elem)) {
+                    if (spec.trigger !== evt_str || spec.from) {
                         continue;
                     }
 
@@ -4060,9 +4066,12 @@ return (function () {
                             if (!matches(elem, selector)) {
                                 continue;
                             }
-                            var match = hxTriggerSelector(evt.type, selector);
+                            var match = hxTriggerFromSelector(evt.type, selector);
                             for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:") === -1) {
+                                    continue;
+                                }
+                                if (ignoreBoostedAnchorCtrlClick(el, evt)) {
                                     continue;
                                 }
 
@@ -4077,12 +4086,16 @@ return (function () {
                             if (!matches(elem, selector)) {
                                 continue;
                             }
-                            var match = hxTriggerSelector(evt.type, "closest " + selector);
+                            var match = hxTriggerFromSelector(evt.type, "closest " + selector);
                             for (var el of toArray(querySelectorAllExt(elem, match))) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:closest") === -1) {
                                     continue;
                                 }
 
+                                if (ignoreBoostedAnchorCtrlClick(el, evt)) {
+                                    continue;
+                                }
+                                
                                 // Make sure it is the closest 'selector'
                                 if (closest(el, selector) !== elem) {
                                     continue;
@@ -4099,15 +4112,20 @@ return (function () {
                             if (!matches(elem, selector)) {
                                 continue;
                             }
-                            var match = hxTriggerSelector(evt.type, "find " + selector);
+                            var match = hxTriggerFromSelector(evt.type, "find " + selector);
                             var elem_closest = elem;
                             while (elem_closest.parentElement) {
                                 elem_closest = closest(elem_closest.parentElement, match);
                                 if (!elem_closest) {
                                     break;
                                 }
+
                                 if (getAttributeValue(elem_closest, "hx-trigger").indexOf("from:find") === -1) {
                                     continue;
+                                }
+
+                                if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
+                                    return;
                                 }
 
                                 filterElems(elems, elem_closest, evt.target, selector);
@@ -4126,21 +4144,13 @@ return (function () {
                         evt.stopPropagation();
                     }
 
-                    // Can I always assume 'document' and 'window' are true?
+                    // TODO: Can I always assume 'document' and 'window' are true?
                     // Althought between evt.target and document/window
                     // might be a call to evt.stopPropagation. Have to 
                     // consider this. Would basically have to check if
                     // there is evt.type with consume. Make sure 
                     // consume doesn't have 'from:' that might apply to 
                     // some other section of the tree.
-
-                    // Currently not used because validEventDelegation
-                    // if (spec.from) {
-                    //     if (!hasValidFrom(elem, spec.from)) {
-                    //         continue;
-                    //     }
-                    // }
-
 
                     forEach(elems, function (elem) {
                         triggerEvent(elem, 'htmx:trigger')
