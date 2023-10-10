@@ -4182,33 +4182,6 @@ return (function () {
 
                 console.groupEnd();    
             }
-
-            function hasValidFrom(elem, from) {
-                if (from.indexOf("closest ") === 0) {
-                    // TODO: have to make sure there is no 'consume'
-                    // event modifier between current element and
-                    // closest element
-                    return !!closest(elem, normalizeSelector(from.substr(8)));
-                } else if (from.indexOf("find ") === 0) {
-                    // Should not have the same problem as 'closest' because
-                    // I am sure that there was no consume/stopPropagation.
-                    // I have already walked and checked the tree.
-                    // TODO: use Node.contains instead. Could right 
-                    // polyfill also using querySelector.
-                    // TODO: This executes event too late. Have to execute
-                    // when child element is found in DOM (when walking
-                    // up the tree). Best option maybe would be to gather
-                    // all 'find' selectors.
-                    return !!getDocument().querySelector(normalizeSelector(from.substr(5)));
-                } else if (from === 'document') {
-                    // TODO: same as closest
-                    return document;
-                } else if (from === 'window') {
-                    // TODO: same as closest
-                    return window;
-                } 
-                return false;
-            }
         }
 
         /** @param {string} evt_str */
