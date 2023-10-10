@@ -3999,6 +3999,15 @@ return (function () {
                 return out_elems;
             }
 
+            function hxTriggerSelector(evt_type, selector) {
+                var parent = "";
+                if (selector.indexOf("closest") === 0) {
+                    parent = selector.slice(8) + " ";
+                }
+                return parent + "[hx-trigger*='" + evt_type + "']" + "[hx-trigger*='from:" + selector + "']" +
+                    "," + parent + "[data-hx-trigger*='" + evt_type + "']" + "[data-hx-trigger*='from:" + selector + "']";
+            }
+
             // Handle 'from:<value>' event modifier. <value> might exist
             // anywhere on the page. It might not be part of the current
             // section of tree going up or down.
@@ -4047,8 +4056,7 @@ return (function () {
                             if (!matches(elem, selector)) {
                                 continue;
                             }
-                            // TODO: add 'data-hx' attribute selectors
-                            var match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:" + selector + "']";
+                            var match = hxTriggerSelector(evt.type, selector);
                             for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:") === -1) {
                                     continue;
@@ -4065,8 +4073,7 @@ return (function () {
                             if (!matches(elem, selector)) {
                                 continue;
                             }
-                            // TODO: add 'data-hx' attribute selectors
-                            var match = selector + " [hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:closest " + selector + "']";
+                            var match = hxTriggerSelector(evt.type, "closest " + selector);
                             for (var el of toArray(querySelectorAllExt(elem, match))) {
                                 if (getAttributeValue(el, "hx-trigger").indexOf("from:closest") === -1) {
                                     continue;
@@ -4088,8 +4095,7 @@ return (function () {
                             if (!matches(elem, selector)) {
                                 continue;
                             }
-                            // TODO: add 'data-hx' attribute selectors
-                            var match = "[hx-trigger*='" + evt.type + "']" + "[hx-trigger*='from:find " + selector + "']";
+                            var match = hxTriggerSelector(evt.type, "find " + selector);
                             var elem_closest = elem;
                             while (elem_closest.parentElement) {
                                 elem_closest = closest(elem_closest.parentElement, match);
