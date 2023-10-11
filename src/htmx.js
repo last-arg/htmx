@@ -3990,12 +3990,12 @@ return (function () {
                 elem = elem.parentElement?.closest(selector)
             }
 
-            function filterElems(out_elems, el, evt_target, selector) {
+            function filterElems(out_elems, el, evt, selector) {
                 for (var rule of getTriggerSpecs(el)) {
                     if (evt.type !== rule.trigger || rule.from === undefined) {
                         continue;
                     }
-                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt_target), rule.target)) {
+                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
                         continue;
                     }
                     if (rule.from.indexOf(selector) === -1) {
@@ -4015,10 +4015,10 @@ return (function () {
             function hxTriggerFromSelector(evt_type, selector) {
                 var parent = "";
                 if (selector.indexOf("closest") === 0) {
-                    parent = selector.slice(8) + " ";
+                    parent = selector.slice(8);
                 }
-                return parent + "[hx-trigger*='" + evt_type + "']" + "[hx-trigger*='from:" + selector + "']" +
-                    "," + parent + "[data-hx-trigger*='" + evt_type + "']" + "[data-hx-trigger*='from:" + selector + "']";
+                return parent + " [hx-trigger*='from:" + selector + "']," + 
+                    parent + " [data-hx-trigger*='from:" + selector + "']";
             }
 
             // Handle 'from:<value>' event modifier. <value> might exist
@@ -4068,14 +4068,11 @@ return (function () {
                             }
                             var match = hxTriggerFromSelector(evt.type, selector);
                             for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
-                                if (getAttributeValue(el, "hx-trigger").indexOf("from:") === -1) {
-                                    continue;
-                                }
                                 if (ignoreBoostedAnchorCtrlClick(el, evt)) {
                                     continue;
                                 }
 
-                                filterElems(elems, el, evt.target, selector);
+                                filterElems(elems, el, evt, selector);
                             }
                         }
                     }
@@ -4088,20 +4085,17 @@ return (function () {
                             }
                             var match = hxTriggerFromSelector(evt.type, "closest " + selector);
                             for (var el of toArray(querySelectorAllExt(elem, match))) {
-                                if (getAttributeValue(el, "hx-trigger").indexOf("from:closest") === -1) {
-                                    continue;
-                                }
-
                                 if (ignoreBoostedAnchorCtrlClick(el, evt)) {
                                     continue;
                                 }
                                 
                                 // Make sure it is the closest 'selector'
+                                // TODO: rethink logic
                                 if (closest(el, selector) !== elem) {
                                     continue;
                                 }
 
-                                filterElems(elems, el, evt.target, selector);
+                                filterElems(elems, el, evt, selector);
                             }
                         }
                     }
@@ -4120,15 +4114,11 @@ return (function () {
                                     break;
                                 }
 
-                                if (getAttributeValue(elem_closest, "hx-trigger").indexOf("from:find") === -1) {
-                                    continue;
-                                }
-
                                 if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
                                     return;
                                 }
 
-                                filterElems(elems, elem_closest, evt.target, selector);
+                                filterElems(elems, elem_closest, evt, selector);
                             }
                         }
                     }
