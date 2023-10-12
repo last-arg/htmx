@@ -1429,7 +1429,7 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume"];
+            var valid_keys = ["trigger", "target", "from", "consume", "once"];
             var keys = Object.keys(triggerSpec);
             var spec_len = keys.length; 
             if (spec_len > valid_keys.length) {
@@ -4142,9 +4142,27 @@ return (function () {
                     // consume doesn't have 'from:' that might apply to 
                     // some other section of the tree.
 
+                    // TODO: move this out of triggerSpec loop?
                     forEach(elems, function (elem) {
+                        var attr_key = "hx-trigger";
+                        var attr_value = getRawAttribute(elem, attr_key);
+                        if (attr_value === null) {
+                            attr_key = "data-hx-trigger";
+                            attr_value = getRawAttribute(elem, attr_key);
+                        }
+                        if (attr_value && attr_value.includes(" once")) {
+                            var new_value = attr_value.split(",").filter(function(val) {
+                                return !val.includes(" once");
+                            }).join(",");
+
+                            if (new_value.length === 0) {
+                                elem.removeAttribute(attr_key);
+                            } else {
+                                elem.setAttribute(attr_key, new_value);
+                            }
+                        }
                         triggerEvent(elem, 'htmx:trigger')
-                        forEach(VERBS, function (verb) {
+                        forEach(VERBS, function (/** @type {string} */verb) {
                             if (hasAttribute(elem,'hx-' + verb)) {
                                 var path = getAttributeValue(elem, 'hx-' + verb);
                                 if (closest(elem, htmx.config.disableSelector)) {
