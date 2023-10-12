@@ -1429,7 +1429,7 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume", "once"];
+            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter"];
             var keys = Object.keys(triggerSpec);
             var spec_len = keys.length; 
             if (spec_len > valid_keys.length) {
@@ -3995,6 +3995,10 @@ return (function () {
                     if (rule.from.indexOf(selector) === -1) {
                         continue
                     }
+                    if (maybeFilterEvent(rule, elem, evt)) {
+                        continue;
+                    }
+
                     // TODO: need to check rule.consume?
                     out_elems.push(el);
                 }
@@ -4113,7 +4117,6 @@ return (function () {
                                     break;
                                 }
 
-
                                 filterElems(elems, elem_closest, evt, selector);
                             }
                         }
@@ -4121,6 +4124,10 @@ return (function () {
 
                     if (elems.length === 0) { 
                         if (ignoreBoostedAnchorCtrlClick(elem, evt)) {
+                            return;
+                        }
+
+                        if (maybeFilterEvent(spec, elem, evt)) {
                             return;
                         }
 
