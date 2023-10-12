@@ -3936,14 +3936,8 @@ return (function () {
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
 
-            console.log("state", state.modifier.from)
             attr_event += modifierSelector(state.modifier.from.selector[evtType]);
             attr_event += modifierSelector(state.modifier.from.closest[evtType]);
-            // var out = "";
-            // for (var selector of state.modifier.from.closest[evtType]) {
-            //     out += selector + " ";
-            // }
-            // console.log("out", out)
             attr_event += modifierSelector(state.modifier.from.find[evtType]);
 
             function modifierSelector(modifier) {
@@ -4109,14 +4103,16 @@ return (function () {
                             var match = hxTriggerFromSelector(evt.type, "find " + selector);
                             var elem_closest = elem;
                             while (elem_closest.parentElement) {
+                                if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
+                                    elem_closest = elem_closest.parentElement;
+                                    continue;
+                                }
+
                                 elem_closest = closest(elem_closest.parentElement, match);
                                 if (!elem_closest) {
                                     break;
                                 }
 
-                                if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
-                                    return;
-                                }
 
                                 filterElems(elems, elem_closest, evt, selector);
                             }
@@ -4124,6 +4120,10 @@ return (function () {
                     }
 
                     if (elems.length === 0) { 
+                        if (ignoreBoostedAnchorCtrlClick(elem, evt)) {
+                            return;
+                        }
+
                         if(!isValidEventForDelegation(spec, elem)) {
                             continue;
                         }
