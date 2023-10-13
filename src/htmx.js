@@ -1429,7 +1429,7 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle", "delay"];
+            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle", "delay", "queue"];
             var keys = Object.keys(triggerSpec);
             var spec_len = keys.length; 
             if (spec_len > valid_keys.length) {
@@ -4158,6 +4158,12 @@ return (function () {
                         var elem_trigger = elem_triggers[i];
                         var elem_data = getInternalData(elem);
 
+                        // NOTE: This might not work correctly if there is certain
+                        // combination of hx-trigger combinations. 'delay'
+                        // modifier might make it weird.
+                        var eventData = getInternalData(evt);
+                        eventData.triggerSpec = elem_trigger;
+                        
                         // Make sure event trigger with 'once' is only called
                         // once
                         var attr_key = "hx-trigger";
