@@ -1429,7 +1429,7 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle"];
+            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle", "delay"];
             var keys = Object.keys(triggerSpec);
             var spec_len = keys.length; 
             if (spec_len > valid_keys.length) {
@@ -4157,9 +4157,10 @@ return (function () {
                         var elem = elems[i];
                         var elem_trigger = elem_triggers[i];
                         var elem_data = getInternalData(elem);
-                        // if (elem_data.delayed) {
-                        //     clearTimeout(elem_data.delayed);
-                        // }
+
+                        if (elem_data.delayed) {
+                            clearTimeout(elem_data.delayed);
+                        }
 
                         // NOTE: filterElems removes elem+trigger with active
                         // throttle
@@ -4171,9 +4172,10 @@ return (function () {
                                 }, elem_trigger.throttle);
                             }
                             continue;
+                        } else if (elem_trigger.delay) {
+                            elem_data.delayed = setTimeout(function() { issueRequest(elem, evt) }, elem_trigger.delay);
+                            continue;
                         }
-                        // } else if (elem_spec.delay) {
-                        //     element_data.delayed = setTimeout(function() { handler(elt, evt) }, elem_spec.delay);
                         // } else {
                         //     triggerEvent(elt, 'htmx:trigger')
                         //     handler(elt, evt);
