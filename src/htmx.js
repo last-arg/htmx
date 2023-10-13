@@ -4158,28 +4158,8 @@ return (function () {
                         var elem_trigger = elem_triggers[i];
                         var elem_data = getInternalData(elem);
 
-                        if (elem_data.delayed) {
-                            clearTimeout(elem_data.delayed);
-                        }
-
-                        // NOTE: filterElems removes elem+trigger with active
-                        // throttle
-                        if (elem_trigger.throttle) {
-                            if (!elem_data.throttle) {
-                                issueRequest(elem, evt);
-                                elem_data.throttle = setTimeout(function () {
-                                    elem_data.throttle = null;
-                                }, elem_trigger.throttle);
-                            }
-                            continue;
-                        } else if (elem_trigger.delay) {
-                            elem_data.delayed = setTimeout(function() { issueRequest(elem, evt) }, elem_trigger.delay);
-                            continue;
-                        }
-                        // } else {
-                        //     triggerEvent(elt, 'htmx:trigger')
-                        //     handler(elt, evt);
-
+                        // Make sure event trigger with 'once' is only called
+                        // once
                         var attr_key = "hx-trigger";
                         var attr_value = getRawAttribute(elem, attr_key);
                         if (attr_value === null) {
@@ -4198,7 +4178,24 @@ return (function () {
                             }
                         }
 
+                        if (elem_data.delayed) {
+                            clearTimeout(elem_data.delayed);
+                        }
 
+                        // NOTE: filterElems removes elem+trigger with active
+                        // throttle
+                        if (elem_trigger.throttle) {
+                            if (!elem_data.throttle) {
+                                issueRequest(elem, evt);
+                                elem_data.throttle = setTimeout(function () {
+                                    elem_data.throttle = null;
+                                }, elem_trigger.throttle);
+                            }
+                            continue;
+                        } else if (elem_trigger.delay) {
+                            elem_data.delayed = setTimeout(function() { issueRequest(elem, evt) }, elem_trigger.delay);
+                            continue;
+                        }
 
                         issueRequest(elem, evt);
                     }
