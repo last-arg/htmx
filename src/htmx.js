@@ -1456,9 +1456,7 @@ return (function () {
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
-            console.log("add-event", elt, handler, nodeData, triggerSpec, explicitCancel)
             var elementData = getInternalData(elt);
-            console.log("elem-data", elementData)
             var eltsToListenOn;
             if (triggerSpec.from) {
                 eltsToListenOn = querySelectorAllExt(elt, triggerSpec.from);
@@ -4168,18 +4166,25 @@ return (function () {
                                 elem.setAttribute(attr_key, new_value);
                             }
                         }
-                        triggerEvent(elem, 'htmx:trigger')
-                        forEach(VERBS, function (/** @type {string} */verb) {
-                            if (hasAttribute(elem,'hx-' + verb)) {
-                                var path = getAttributeValue(elem, 'hx-' + verb);
-                                if (closest(elem, htmx.config.disableSelector)) {
-                                    cleanUpElement(elem)
-                                    return
-                                }
-                                console.log("issueAjaxRequest", elem)
-                                issueAjaxRequest(verb, path, elem, evt)
+
+
+
+                        issueRequest(elem, evt);
+                    });
+                }
+
+                function issueRequest(elem, evt) {
+                    triggerEvent(elem, 'htmx:trigger')
+                    forEach(VERBS, function (/** @type {string} */verb) {
+                        if (hasAttribute(elem,'hx-' + verb)) {
+                            var path = getAttributeValue(elem, 'hx-' + verb);
+                            if (closest(elem, htmx.config.disableSelector)) {
+                                cleanUpElement(elem)
+                                return
                             }
-                        });
+                            console.log("issueAjaxRequest", elem)
+                            issueAjaxRequest(verb, path, elem, evt)
+                        }
                     });
                 }
 
