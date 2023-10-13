@@ -1429,7 +1429,7 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter"];
+            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle"];
             var keys = Object.keys(triggerSpec);
             var spec_len = keys.length; 
             if (spec_len > valid_keys.length) {
@@ -3982,7 +3982,7 @@ return (function () {
                 elem = elem.parentElement?.closest(selector)
             }
 
-            function filterElems(out_elems, el, evt, selector) {
+            function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
                 for (var rule of getTriggerSpecs(el)) {
                     if (evt.type !== rule.trigger || rule.from === undefined) {
                         continue;
@@ -3993,15 +3993,18 @@ return (function () {
                     if (rule.from.indexOf(selector) === -1) {
                         continue
                     }
+                    var elem_data = getInternalData(elem);
+                    if (elem_data.throttle) {
+                        continue;
+                    }
                     if (maybeFilterEvent(rule, elem, evt)) {
                         continue;
                     }
 
                     // TODO: need to check rule.consume?
                     out_elems.push(el);
+                    out_elem_triggers.push(rule);
                 }
-                
-                return out_elems;
             }
 
             /**
@@ -4055,6 +4058,7 @@ return (function () {
                     }
 
                     var elems = [];
+                    var elem_triggers = [];
 
                     var from_selector = state.modifier.from.selector;
                     if (from_selector[evt.type]) {
@@ -4068,7 +4072,7 @@ return (function () {
                                     continue;
                                 }
 
-                                filterElems(elems, el, evt, selector);
+                                filterElems(elems, elem_triggers, el, evt, selector);
                             }
                         }
                     }
@@ -4091,7 +4095,7 @@ return (function () {
                                     continue;
                                 }
 
-                                filterElems(elems, el, evt, selector);
+                                filterElems(elems, elem_triggers, el, evt, selector);
                             }
                         }
                     }
@@ -4115,7 +4119,7 @@ return (function () {
                                     break;
                                 }
 
-                                filterElems(elems, elem_closest, evt, selector);
+                                filterElems(elems, elem_triggers, elem_closest, evt, selector);
                             }
                         }
                     }
@@ -4133,6 +4137,7 @@ return (function () {
                             continue;
                         }
                         elems.push(elem);
+                        elem_triggers.push(spec);
                     }
 
                     if (spec.consume) {
@@ -4148,7 +4153,31 @@ return (function () {
                     // some other section of the tree.
 
                     // TODO: move this out of triggerSpec loop?
-                    forEach(elems, function (elem) {
+                    for (var i = 0; i < elems.length; i++) {
+                        var elem = elems[i];
+                        var elem_trigger = elem_triggers[i];
+                        var elem_data = getInternalData(elem);
+                        // if (elem_data.delayed) {
+                        //     clearTimeout(elem_data.delayed);
+                        // }
+
+                        // NOTE: filterElems removes elem+trigger with active
+                        // throttle
+                        if (elem_trigger.throttle) {
+                            if (!elem_data.throttle) {
+                                issueRequest(elem, evt);
+                                elem_data.throttle = setTimeout(function () {
+                                    elem_data.throttle = null;
+                                }, elem_trigger.throttle);
+                            }
+                            continue;
+                        }
+                        // } else if (elem_spec.delay) {
+                        //     element_data.delayed = setTimeout(function() { handler(elt, evt) }, elem_spec.delay);
+                        // } else {
+                        //     triggerEvent(elt, 'htmx:trigger')
+                        //     handler(elt, evt);
+
                         var attr_key = "hx-trigger";
                         var attr_value = getRawAttribute(elem, attr_key);
                         if (attr_value === null) {
@@ -4170,7 +4199,7 @@ return (function () {
 
 
                         issueRequest(elem, evt);
-                    });
+                    }
                 }
 
                 function issueRequest(elem, evt) {
