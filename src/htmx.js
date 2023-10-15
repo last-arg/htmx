@@ -1450,9 +1450,11 @@ return (function () {
             // This is more to detect extension elements
             var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
             // TODO: event delegate form events (submit)?
-            var is_form_event = shouldCancelImpl(triggerSpec.trigger, elem);
+            // var is_form_event = shouldCancelImpl(triggerSpec.trigger, elem);
+            // NOTE: not sure why from element with click needs to evt.preventDefault()?
+            var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
             // console.log("conds", !is_invalid_form, !is_form_event, !is_ext, is_valid_selector)
-            return !is_invalid_form && !is_form_event && !is_ext && is_valid_selector && !is_lone_trigger;
+            return !is_invalid_form && !is_ext && is_valid_selector && !is_lone_trigger && !special_form_case;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -3827,6 +3829,7 @@ return (function () {
                     }
                 }
             };
+
             setTimeout(function () {
                 triggerEvent(body, 'htmx:load', {}); // give ready handlers a chance to load up before firing this event
                 body = null; // kill reference for gc
@@ -3923,6 +3926,7 @@ return (function () {
                         }
                     }
                 }
+
                 if (!state.events.includes(spec.trigger)) {
                     state.events.push(spec.trigger);
                     addDocumentEvent(spec.trigger);
@@ -3967,6 +3971,7 @@ return (function () {
           */
 
         function handleEventDelegation(evt, evt_str) {
+            console.log("handle:", evt_str, evt.target)
             // TODO: See how to handle/ignore from:document.
             if (evt.target === document) {
                 return;
@@ -4048,9 +4053,13 @@ return (function () {
                 @param {HTMLElement} elem
             */
             function processHtmxTrigger(evt, elem) {
-                console.group("processHtmxTrigger", elem, evt.target)
+                console.group("processHtmxTrigger", evt.type, elem, evt.target)
 
-                if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){
+                // TODO: add initButtonTracking event listeners here?
+                // There should not be much such elements on page so event
+                // count would be low.
+
+                if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){ 
                     evt.preventDefault();
                 }
 
@@ -4125,18 +4134,7 @@ return (function () {
                     }
                 }
                 
-                // TODO: should I bring state.modifier.from loops outside of
-                // 'getTriggerSpecs' loop
-
-                // TODO: if no spec (hx-trigger) can assume hx-trigger 'from'
-                // has been used? Default trigger spec is 'click'
-                // Yeah this will cause problems. <input> default event
-                // is 'change', but I wanted 'click'.
-                // Need to figure out how to do things with 'from:'.
-                // Probably have to pull all modifier loops out of the spec
-                // loop. Not sure why they are in there anyway. Sould be able
-                // to pull them out.
-                // @continue
+                // TODO: only do this when no 'elems'?
                 for (const spec of getTriggerSpecs(elem)) {
                     if (spec.trigger !== evt_str || spec.from) {
                         continue;
@@ -4182,7 +4180,7 @@ return (function () {
                     // combination of hx-trigger combinations. 'delay'
                     // modifier might make it weird.
                     eventData.triggerSpec = elem_trigger;
-                    
+
                     // Make sure event trigger with 'once' is only called
                     // once
                     var attr_key = "hx-trigger";
@@ -4249,27 +4247,6 @@ return (function () {
                     });
                 }
 
-                // TODO: need to handle form stuff differently
-                var is_form_events = evt.type === "click" || evt.type === "focusin" || evt.type === "focusout";
-                if (is_form_events && elem.tagName === "FORM" || (getRawAttribute(elem, "type") === "submit" && hasAttribute(elem, "form"))) {
-                    var form = resolveTarget("#" + getRawAttribute(elem, "form")) || closest(elem, "form")
-                    if (!form) {
-                        return
-                    }
-
-                    // need to handle both click and focus in:
-                    //   focusin - in case someone tabs in to a button and hits the space bar
-                    //   click - on OSX buttons do not focus on click see https://bugs.webkit.org/show_bug.cgi?id=13724
-                    if (evt.type === "click" || evt.type === "focusin") {
-                        if (elem.matches("button, input[type='submit']")) {
-                            var internalData = getInternalData(form);
-                            internalData.lastButtonClicked = elem;
-                        }
-                    } else if (evt.type === "focusout") {
-                        var internalData = getInternalData(form);
-                        internalData.lastButtonClicked = null;
-                    }
-                }
 
                 console.groupEnd();    
             }
