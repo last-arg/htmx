@@ -1431,15 +1431,15 @@ return (function () {
             // TODO: need to make these conditions better in the future 
             var is_invalid_form = false;
             if (triggerSpec.from) {
+                // @continue
+                // TODO: implement from:document/window
                 is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window";
             }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
             // This is more to detect extension elements
             var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
-            // TODO: event delegate form events (submit)?
-            // var is_form_event = shouldCancelImpl(triggerSpec.trigger, elem);
-            // NOTE: not sure why from element with click needs to evt.preventDefault()?
+            // NOTE: not sure why <from> with click needs to evt.preventDefault()?
             var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
             // console.log("conds", !is_invalid_form, !is_form_event, !is_ext, is_valid_selector)
             return !is_invalid_form && !is_ext && is_valid_selector && !is_lone_trigger && !special_form_case;
@@ -3855,9 +3855,6 @@ return (function () {
                     continue;
                 }
 
-                // TODO: enable again when done with spec loop and
-                // hx-trigger 'from:' conflict
-                // store the initial values of the elements, so we can tell if they change
                 if (spec.changed) {
                     var eltsToListenOn = spec.from ? querySelectorAllExt(elem, spec.from) : [elem];
                     eltsToListenOn.forEach(function (eltToListenOn) {
@@ -3966,14 +3963,6 @@ return (function () {
             
             let elem = /** @type {HTMLElement | null} */ (evt.target);
             if (!elem) { return; }
-
-            // TODO: do I have to consider event modifiers 'target:' and 
-            // 'from:' in CSS selector?
-            // TODO: have to modify attribute value if it has event 
-            // modifier 'once'. In case 'once' is the only event
-            // remove attribute or just make attribute with empty value?
-            // Empty hx-trigger would indicate that something was there.
-            // Will see what I will do.
 
             var selector = createEventSelector(evt.type);
 
@@ -4121,7 +4110,6 @@ return (function () {
                     }
                 }
                 
-                // TODO: only do this when no 'elems'?
                 for (const spec of getTriggerSpecs(elem)) {
                     if (spec.trigger !== evt_str || spec.from) {
                         continue;
@@ -4191,8 +4179,6 @@ return (function () {
                         }
                     }
 
-                    // TODO: enable again when done with spec loop and
-                    // hx-trigger 'from:' conflict
                     if (elem_trigger.changed) {
                         if (target_data.lastValue === target_elem.value) {
                             continue;
