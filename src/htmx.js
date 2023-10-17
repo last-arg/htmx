@@ -1429,7 +1429,7 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle", "delay", "queue"];
+            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle", "delay", "queue", "changed"];
             var keys = Object.keys(triggerSpec);
             var spec_len = keys.length; 
             if (spec_len > valid_keys.length) {
@@ -3870,14 +3870,13 @@ return (function () {
                 // TODO: enable again when done with spec loop and
                 // hx-trigger 'from:' conflict
                 // store the initial values of the elements, so we can tell if they change
-                // if (spec.changed) {
-                //     var eltsToListenOn = querySelectorAllExt(elem, spec.from);
-                //     eltsToListenOn.forEach(function (eltToListenOn) {
-                //         console.log(eltToListenOn)
-                //         var eltToListenOnData = getInternalData(eltToListenOn);
-                //         eltToListenOnData.lastValue = eltToListenOn.value;
-                //     })
-                // }
+                if (spec.changed) {
+                    var eltsToListenOn = spec.from ? querySelectorAllExt(elem, spec.from) : [elem];
+                    eltsToListenOn.forEach(function (eltToListenOn) {
+                        var eltToListenOnData = getInternalData(eltToListenOn);
+                        eltToListenOnData.lastValue = eltToListenOn.value;
+                    })
+                }
                 
                 if (spec.from) {
                     // from:<selector>
@@ -4171,6 +4170,9 @@ return (function () {
                 // some other section of the tree.
 
                 var eventData = getInternalData(evt);
+                // TODO: rename 'elem'
+                var target_elem = elem;
+                var target_data = getInternalData(target_elem);
                 for (var i = 0; i < elems.length; i++) {
                     var elem = elems[i];
                     var elem_trigger = elem_triggers[i];
@@ -4203,12 +4205,12 @@ return (function () {
 
                     // TODO: enable again when done with spec loop and
                     // hx-trigger 'from:' conflict
-                    // if (elem_trigger.changed) {
-                    //     if (elem_data.lastValue === elem.value) {
-                    //         continue;
-                    //     }
-                    //     elem_data.lastValue = elem.value
-                    // }
+                    if (elem_trigger.changed) {
+                        if (target_data.lastValue === target_elem.value) {
+                            continue;
+                        }
+                        target_data.lastValue = target_elem.value
+                    }
                     
                     if (elem_data.delayed) {
                         clearTimeout(elem_data.delayed);
