@@ -1429,18 +1429,6 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var valid_keys = ["trigger", "target", "from", "consume", "once", "eventFilter", "throttle", "delay", "queue", "changed"];
-            var keys = Object.keys(triggerSpec);
-            var spec_len = keys.length; 
-            if (spec_len > valid_keys.length) {
-                return false;
-            }
-            for (var key of keys) {
-                if (valid_keys.indexOf(key) > -1) {
-                    continue;
-                }
-                return false;
-            }
             var is_invalid_form = false;
             if (triggerSpec.from) {
                 is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window";
