@@ -3987,11 +3987,11 @@ return (function () {
                     if (rule.from.indexOf(selector) === -1) {
                         continue
                     }
-                    var elem_data = getInternalData(elem);
+                    var elem_data = getInternalData(el);
                     if (elem_data.throttle) {
                         continue;
                     }
-                    if (maybeFilterEvent(rule, elem, evt)) {
+                    if (maybeFilterEvent(rule, el, evt)) {
                         continue;
                     }
 
