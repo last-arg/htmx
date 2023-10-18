@@ -1432,8 +1432,8 @@ return (function () {
             var is_invalid_form = false;
             if (triggerSpec.from) {
                 // @continue
-                // TODO: implement from:document/window
-                is_invalid_form = triggerSpec.from === "document" || triggerSpec.from === "window";
+                // TODO: implement from:window
+                is_invalid_form = triggerSpec.from === "window";
             }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
@@ -3956,26 +3956,35 @@ return (function () {
 
         function handleEventDelegation(evt, evt_str) {
             console.log("handle:", evt_str, evt.target)
-            // TODO: See how to handle/ignore from:document.
-            if (evt.target === document) {
-                return;
-            }
             
-            let elem = /** @type {HTMLElement | null} */ (evt.target);
-            if (!elem) { return; }
+            if (evt.target !== document) {
+                var elem = /** @type {HTMLElement | null} */ (evt.target);
+                if (!elem) { return; }
 
-            var selector = createEventSelector(evt.type);
+                var selector = createEventSelector(evt.type);
 
-            elem = closest(elem, selector);
-            // NOTE: 'evt.cancelBubble' value will become true if 
-            // stop(Immediate)Propagation was called. 
-            // 'evt.bubbles' is read-only value but can something
-            // else changed it?
-            while (elem && evt.bubbles && !evt.cancelBubble) {
-                processHtmxTrigger(evt, elem)                    
-                elem = elem.parentElement?.closest(selector)
+                elem = closest(elem, selector);
+                // NOTE: 'evt.cancelBubble' value will become true if 
+                // stop(Immediate)Propagation was called. 
+                // 'evt.bubbles' is read-only value but can something
+                // else changed it?
+                while (elem && evt.bubbles && !evt.cancelBubble) {
+                    processHtmxTrigger(evt, elem)                    
+                    elem = elem.parentElement?.closest(selector)
+                }
             }
 
+            if (evt.bubbles && !evt.cancelBubble) {
+                var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "document")));
+                var elems = [];
+                var elem_triggers = [];
+                for (var el of input_elems) {
+                    filterElems(elems, elem_triggers, el, evt, "document");
+                }
+                triggerElems(elems, elem_triggers, evt, getDocument())
+            }
+
+            // TODO: move fns outside
             function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
                 for (var rule of getTriggerSpecs(el)) {
                     if (evt.type !== rule.trigger || rule.from === undefined) {
@@ -4014,6 +4023,25 @@ return (function () {
                     parent + " [data-hx-trigger*='from:" + selector + "']";
             }
 
+            function findFromSelectorElems(elems, elem_triggers, evt) {
+                var from_selector = state.modifier.from.selector;
+                if (from_selector[evt.type]) {
+                    for (var selector of from_selector[evt.type]) {
+                        if (!matches(elem, selector)) {
+                            continue;
+                        }
+                        var match = hxTriggerFromSelector(evt.type, selector);
+                        for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
+                            if (ignoreBoostedAnchorCtrlClick(el, evt)) {
+                                continue;
+                            }
+
+                            filterElems(elems, elem_triggers, el, evt, selector);
+                        }
+                    }
+                }
+            }
+
             // Handle 'from:<value>' event modifier. <value> might exist
             // anywhere on the page. It might not be part of the current
             // section of tree going up or down.
@@ -4046,22 +4074,7 @@ return (function () {
                 var elems = [];
                 var elem_triggers = [];
 
-                var from_selector = state.modifier.from.selector;
-                if (from_selector[evt.type]) {
-                    for (var selector of from_selector[evt.type]) {
-                        if (!matches(elem, selector)) {
-                            continue;
-                        }
-                        var match = hxTriggerFromSelector(evt.type, selector);
-                        for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
-                            if (ignoreBoostedAnchorCtrlClick(el, evt)) {
-                                continue;
-                            }
-
-                            filterElems(elems, elem_triggers, el, evt, selector);
-                        }
-                    }
-                }
+                findFromSelectorElems(elems, elem_triggers, evt)
 
                 var from_closest = state.modifier.from.closest;
                 if (from_closest[evt.type]) {
@@ -4137,17 +4150,19 @@ return (function () {
                     }
                 }
 
-                // TODO: Can I always assume 'document' and 'window' are true?
-                // Althought between evt.target and document/window
-                // might be a call to evt.stopPropagation. Have to 
-                // consider this. Would basically have to check if
-                // there is evt.type with consume. Make sure 
-                // consume doesn't have 'from:' that might apply to 
-                // some other section of the tree.
+                triggerElems(elems, elem_triggers, evt, elem);
+            }
 
+            // TODO: Can I always assume 'document' and 'window' are true?
+            // Althought between evt.target and document/window
+            // might be a call to evt.stopPropagation. Have to 
+            // consider this. Would basically have to check if
+            // there is evt.type with consume. Make sure 
+            // consume doesn't have 'from:' that might apply to 
+            // some other section of the tree.
+
+            function triggerElems(elems, elem_triggers, evt, target_elem) {
                 var eventData = getInternalData(evt);
-                // TODO: rename 'elem'
-                var target_elem = elem;
                 var target_data = getInternalData(target_elem);
                 for (var i = 0; i < elems.length; i++) {
                     var elem = elems[i];
