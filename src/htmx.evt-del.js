@@ -1993,32 +1993,6 @@ return (function () {
             nodeData.onHandlers.push({event:eventName, listener:listener});
         }
 
-        function processHxOn(elt) {
-            var hxOnValue = getAttributeValue(elt, 'hx-on');
-            if (hxOnValue) {
-                var handlers = {}
-                var lines = hxOnValue.split("\n");
-                var currentEvent = null;
-                var curlyCount = 0;
-                while (lines.length > 0) {
-                    var line = lines.shift();
-                    var match = line.match(/^\s*([a-zA-Z:\-\.]+:)(.*)/);
-                    if (curlyCount === 0 && match) {
-                        line.split(":")
-                        currentEvent = match[1].slice(0, -1); // strip last colon
-                        handlers[currentEvent] = match[2];
-                    } else {
-                        handlers[currentEvent] += line;
-                    }
-                    curlyCount += countCurlies(line);
-                }
-
-                for (var eventName in handlers) {
-                    addHxOnEventHandler(elt, eventName, handlers[eventName]);
-                }
-            }
-        }
-
         function processHxOnWildcard(elt) {
             // wipe any previous on handlers so that this function takes precedence
             deInitOnHandlers(elt)
@@ -2047,8 +2021,6 @@ return (function () {
                 deInitNode(elt);
 
                 nodeData.initHash = attributeHash(elt);
-
-                processHxOn(elt);
 
                 triggerEvent(elt, "htmx:beforeProcessNode")
 
@@ -2160,6 +2132,7 @@ return (function () {
             }
         }
 
+        // TODO: maybe can use this fn some places
         function triggerEvent(elt, eventName, detail) {
             elt = resolveTarget(elt);
             if (detail == null) {
@@ -3910,6 +3883,25 @@ return (function () {
                 }
             }
 
+            var hx_on_value = getAttributeValue(elem, 'hx-on');
+            if (hx_on_value) {
+                var lines = hx_on_value.split("\n");
+                var curlyCount = 0;
+                while (lines.length > 0) {
+                    var line = lines.shift();
+                    var match = line.match(/^\s*([a-zA-Z:\-\.]+:)(.*)/);
+                    if (curlyCount === 0 && match) {
+                        var event_name = match[1].slice(0, -1); // strip last colon
+                        if (!state.events.includes(event_name)) {
+                            state.events.push(event_name);
+                            addDocumentEvent(event_name);
+                            addWindowEvent(event_name);
+                        }
+                    }
+                    curlyCount += countCurlies(line);
+                }
+            }
+
             return state;
         }
 
@@ -3919,7 +3911,7 @@ return (function () {
             @param {string} evtType
         */
         function createEventSelector(evtType) {
-            var attr_event = "[" + attr + "*=" + evtType + "],[data-" + attr + "*=" + evtType + "]";
+            var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
             if (evtType === "click") {
                 // NOTE: Empty hx-trigger will get click event
                 // Althought empty hx-trigger event callback doesn't do anything.
@@ -3940,20 +3932,60 @@ return (function () {
             }
             
             var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
-            return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
+            return VERB_SELECTOR + boostedElts + ", form, [type='submit'], [data-hx-on], [hx-on], " + attr_event;
+        }
+
+        function processHtmxOn(evt, elt) {
+            console.group("processHtmxOn", evt.type, elt)
+            var hxOnValue = getAttributeValue(elt, 'hx-on');
+            if (hxOnValue) {
+                var code = ""
+                var lines = hxOnValue.split("\n");
+                var has_match_event = false;
+                var curlyCount = 0;
+                while (lines.length > 0) {
+                    var line = lines.shift();
+                    var match = line.match(/^\s*([a-zA-Z:\-\.]+:)(.*)/);
+                    if (curlyCount === 0 && match) {
+                        var evt_name = match[1].slice(0, -1);
+                        has_match_event = evt.type === evt_name;
+                        if (has_match_event) {
+                            code = match[2];
+                        }
+                    } else if (has_match_event) {
+                        code += line;
+                    }
+                    curlyCount += countCurlies(line);
+                }
+
+                if (code.length > 0) {
+                    var func;
+                    maybeEval(elt, function() {
+                        if (!func) {
+                            func = new Function("event", code);
+                        }
+                        func.call(elt, evt);
+                    });
+                }
+            }
+            console.groupEnd();
         }
 
         /** @param {Event} evt
           * @param {string} evt_str 
           */
 
+        // TODO: remove evt_str 
         function handleDocumentDelegation(evt, evt_str) {
-            console.log("handle:", evt_str, evt.target)
-            
             if (evt.target !== document) {
                 var elem = /** @type {HTMLElement | null} */ (evt.target);
                 if (!elem) { return; }
 
+                if (!evt.bubbles || evt.cancelBubble) {
+                    processHtmxTrigger(evt, elem);
+                    processHtmxOn(evt, elem);
+                }
+                
                 var selector = createEventSelector(evt.type);
 
                 elem = closest(elem, selector);
@@ -3962,7 +3994,8 @@ return (function () {
                 // 'evt.bubbles' is read-only value but can something
                 // else changed it?
                 while (elem && evt.bubbles && !evt.cancelBubble) {
-                    processHtmxTrigger(evt, elem)                    
+                    processHtmxTrigger(evt, elem);
+                    processHtmxOn(evt, elem);
                     elem = elem.parentElement?.closest(selector)
                 }
             }
@@ -4236,6 +4269,7 @@ return (function () {
             }
         }
 
+        // TODO: remove evt_str
         function handleWindowDelegation(evt, evt_str) {
             var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "window")));
             var elems = [];
