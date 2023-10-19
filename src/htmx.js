@@ -1429,20 +1429,13 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             // TODO: need to make these conditions better in the future 
-            var is_invalid_form = false;
-            if (triggerSpec.from) {
-                // @continue
-                // TODO: implement from:window
-                is_invalid_form = triggerSpec.from === "window";
-            }
             var is_ext = hasAttribute("hx-ext");
             var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
             // This is more to detect extension elements
             var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
             // NOTE: not sure why <from> with click needs to evt.preventDefault()?
             var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
-            // console.log("conds", !is_invalid_form, !is_form_event, !is_ext, is_valid_selector)
-            return !is_invalid_form && !is_ext && is_valid_selector && !is_lone_trigger && !special_form_case;
+            return !is_ext && is_valid_selector && !is_lone_trigger && !special_form_case;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -2098,7 +2091,6 @@ return (function () {
                 
                 triggerEvent(elt, "htmx:afterProcessNode");
             }
-            console.groupEnd();
         }
 
         function processNode(elt) {
@@ -3914,6 +3906,7 @@ return (function () {
                 if (!state.events.includes(spec.trigger)) {
                     state.events.push(spec.trigger);
                     addDocumentEvent(spec.trigger);
+                    addWindowEvent(spec.trigger);
                 }
             }
 
@@ -4151,6 +4144,7 @@ return (function () {
             }
 
             triggerElems(elems, elem_triggers, evt, elem);
+            console.groupEnd()
         }
 
         // TODO: Can I always assume 'document' and 'window' are true?
@@ -4163,7 +4157,10 @@ return (function () {
 
         function triggerElems(elems, elem_triggers, evt, target_elem) {
             var eventData = getInternalData(evt);
-            var target_data = getInternalData(target_elem);
+            var target_data = undefined;
+            if (target_elem !== document && target_elem !== window) {
+                target_data = getInternalData(target_elem);
+            }
             for (var i = 0; i < elems.length; i++) {
                 var elem = elems[i];
                 var elem_trigger = elem_triggers[i];
@@ -4194,7 +4191,7 @@ return (function () {
                     }
                 }
 
-                if (elem_trigger.changed) {
+                if (elem_trigger.changed && target_data) {
                     if (target_data.lastValue === target_elem.value) {
                         continue;
                     }
@@ -4237,13 +4234,16 @@ return (function () {
                     }
                 });
             }
-
-
-            console.groupEnd();    
         }
 
         function handleWindowDelegation(evt, evt_str) {
-            
+            var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "window")));
+            var elems = [];
+            var elem_triggers = [];
+            for (var el of input_elems) {
+                filterElems(elems, elem_triggers, el, evt, "window");
+            }
+            triggerElems(elems, elem_triggers, evt, window);
         }
 
         /** @param {string} evt_str */
