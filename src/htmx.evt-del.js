@@ -575,6 +575,7 @@ return (function () {
             }
         }
 
+        // TODO?: use indexOf instead? Would avoid allocating new string.
         function startsWith(str, prefix) {
             return str.substring(0, prefix.length) === prefix
         }

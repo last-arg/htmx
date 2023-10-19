@@ -1,3 +1,15 @@
+## This fork
+
+Explore using event delegation in htmx. 
+- Should reduce memory footprint 
+- Should have faster html initializing 
+- Don't have to worry about adding/removing elements so much. 
+  - Adding/removing events listeners
+- Firing events probably slower, especially if event starts deep in DOM.
+
+Considerations:
+- Have to see if there might be some gotchas with event delegation.
+
 [![</> htmx](https://raw.githubusercontent.com/bigskysoftware/htmx/master/www/static/img/htmx_logo.1.png "high power tools for HTML")](https://htmx.org)
 
 *high power tools for HTML*
