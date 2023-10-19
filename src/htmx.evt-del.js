@@ -18,6 +18,7 @@
 }(typeof self !== 'undefined' ? self : this, function () {
 return (function () {
         'use strict';
+        console.log("HTMX MODIFIED");
 
         // Public API
         //** @type {import("./htmx").HtmxApi} */
@@ -1384,7 +1385,17 @@ return (function () {
          * @returns
          */
         function shouldCancel(evt, elt) {
-            if (evt.type === "submit" || evt.type === "click") {
+            return shouldCancelImpl(evt.type, elt);
+        }
+
+        /**
+         *
+         * @param {string} evtType
+         * @param {HTMLElement} elt
+         * @returns
+         */
+        function shouldCancelImpl(evtType, elt) {
+            if (evtType === "submit" || evtType === "click") {
                 if (elt.tagName === "FORM") {
                     return true;
                 }
@@ -1398,7 +1409,7 @@ return (function () {
             }
             return false;
         }
-
+        
         function ignoreBoostedAnchorCtrlClick(elt, evt) {
             return getInternalData(elt).boosted && elt.tagName === "A" && evt.type === "click" && (evt.ctrlKey || evt.metaKey);
         }
@@ -1414,6 +1425,17 @@ return (function () {
                 }
             }
             return false;
+        }
+
+        function isValidEventForDelegation(triggerSpec, elem) {
+            // TODO: need to make these conditions better in the future 
+            var is_ext = hasAttribute("hx-ext");
+            var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
+            // This is more to detect extension elements
+            var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
+            // NOTE: not sure why <from> with click needs to evt.preventDefault()?
+            var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
+            return !is_ext && is_valid_selector && !is_lone_trigger && !special_form_case;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -1497,6 +1519,7 @@ return (function () {
                         }
                     }
                 };
+
                 if (nodeData.listenerInfos == null) {
                     nodeData.listenerInfos = [];
                 }
@@ -1505,6 +1528,7 @@ return (function () {
                     listener: eventListener,
                     on: eltToListenOn
                 })
+
                 eltToListenOn.addEventListener(triggerSpec.trigger, eventListener);
             });
         }
@@ -1829,6 +1853,10 @@ return (function () {
                 nodeData.polling = true;
                 processPolling(elt, handler, triggerSpec);
             } else {
+                if (isValidEventForDelegation(triggerSpec, elt)) {
+                    return;
+                }
+
                 addEventListener(elt, handler, nodeData, triggerSpec);
             }
         }
@@ -2057,6 +2085,9 @@ return (function () {
                 if (wsInfo) {
                     processWebSocketInfo(elt, nodeData, wsInfo);
                 }
+
+                initEventDelegation(triggerSpecs, elt, state);
+                
                 triggerEvent(elt, "htmx:afterProcessNode");
             }
         }
@@ -3777,14 +3808,453 @@ return (function () {
                     }
                 }
             };
+
             setTimeout(function () {
                 triggerEvent(body, 'htmx:load', {}); // give ready handlers a chance to load up before firing this event
                 body = null; // kill reference for gc
             }, 0);
         })
 
+        /** @typedef {Object<'selector' | 'find' | 'closest', Object<string, string[]>>} ModifierFrom */
+        /** @typedef {Object<string, string[]>} ModifierTarget */
+
+        // TODO: have to probably make it 'global'
+        /** @typedef {Object} State
+          * @property {string[]} events
+          * @property {Object.<'from', ModifierFrom> & Object.<'target', ModifierTarget>} modifier
+          */
+        var state = {
+            events: [],
+            // TODO: use Map instead?
+            modifier: {
+                from: {
+                    selector: {},
+                    find: {},
+                    closest: {},
+                },
+                target: { }
+            }
+        };
+        const attr = "hx-trigger"
+
+        /** @param {any[]} triggerSpecs
+        /** @param {HTMLElement} elem
+         ** @param {State} state */
+        function initEventDelegation(triggerSpecs, elem, state) {
+            for (var spec of triggerSpecs) {
+                if (!isValidEventForDelegation(spec, elem)) {
+                    continue;
+                }
+
+                if (spec.changed) {
+                    var eltsToListenOn = spec.from ? querySelectorAllExt(elem, spec.from) : [elem];
+                    eltsToListenOn.forEach(function (eltToListenOn) {
+                        var eltToListenOnData = getInternalData(eltToListenOn);
+                        eltToListenOnData.lastValue = eltToListenOn.value;
+                    })
+                }
+                
+                if (spec.from) {
+                    // from:<selector>
+                    // Event trigger can happen anywhere in the site.
+                    // Can't save Element/Node it might be deleted/replaced.
+                    // The element might change.
+                    // Save:
+                    // - event type
+                    // - from <selector>
+                    // - hx-trigger value (part that applies to this event type)
+                    // - Do I have to take 'consume' into account?
+                    if (spec.from.indexOf("closest") === 0) {
+                        var closest = state.modifier.from.closest;
+                        if (!closest[spec.trigger]) {
+                            closest[spec.trigger] = [spec.from.slice(8)];
+                        } else {
+                            closest[spec.trigger].push(spec.from.slice(8));
+                        }
+                    } else if (spec.from.indexOf("find") === 0) {
+                        var find = state.modifier.from.find;
+                        if (!find[spec.trigger]) {
+                            find[spec.trigger] = [spec.from.slice(5)];
+                        } else {
+                            find[spec.trigger].push(spec.from.slice(5))
+                        }
+                    } else {
+                        var selector = state.modifier.from.selector;
+                        if (!selector[spec.trigger]) {
+                            selector[spec.trigger] = [spec.from];
+                        } else if (selector[spec.trigger].indexOf(spec.from) === -1) {
+                            selector[spec.trigger].push(spec.from);
+                        }
+                    }
+
+                    // Need target only if there is also 'form' modifier
+                    if (spec.target) {
+                        var target = state.modifier.target;
+                        if (!target[spec.trigger]) {
+                            target[spec.trigger] = {};
+                        }
+                        var bucket = spec.from;
+                        if (!target[spec.trigger][bucket]) {
+                            target[spec.trigger][bucket] = [spec.target];
+                        } else if (target[spec.trigger][bucket].indexOf(spec.target) === -1) {
+                            target[spec.trigger][bucket].push(spec.target);
+                        }
+                    }
+                }
+
+                if (!state.events.includes(spec.trigger)) {
+                    state.events.push(spec.trigger);
+                    addDocumentEvent(spec.trigger);
+                    addWindowEvent(spec.trigger);
+                }
+            }
+
+            return state;
+        }
+
+        // TODO: could construct this conditionally
+        // - submit events require certain elements
+        /**
+            @param {string} evtType
+        */
+        function createEventSelector(evtType) {
+            var attr_event = "[" + attr + "*=" + evtType + "],[data-" + attr + "*=" + evtType + "]";
+            if (evtType === "click") {
+                // NOTE: Empty hx-trigger will get click event
+                // Althought empty hx-trigger event callback doesn't do anything.
+                // Empty function body. It is empty function body if there
+                // is no ajax action to take (i.e. no hx-get, hx-post, ...).
+                attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
+            }
+
+            attr_event += modifierSelector(state.modifier.from.selector[evtType]);
+            attr_event += modifierSelector(state.modifier.from.closest[evtType]);
+            attr_event += modifierSelector(state.modifier.from.find[evtType]);
+
+            function modifierSelector(modifier) {
+                if (modifier && modifier.length > 0) {
+                    return "," + modifier.join(",");
+                }
+                return "";
+            }
+            
+            var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
+            return VERB_SELECTOR + boostedElts + ", form, [type='submit'], " + attr_event;
+        }
+
+        /** @param {Event} evt
+          * @param {string} evt_str 
+          */
+
+        function handleDocumentDelegation(evt, evt_str) {
+            console.log("handle:", evt_str, evt.target)
+            
+            if (evt.target !== document) {
+                var elem = /** @type {HTMLElement | null} */ (evt.target);
+                if (!elem) { return; }
+
+                var selector = createEventSelector(evt.type);
+
+                elem = closest(elem, selector);
+                // NOTE: 'evt.cancelBubble' value will become true if 
+                // stop(Immediate)Propagation was called. 
+                // 'evt.bubbles' is read-only value but can something
+                // else changed it?
+                while (elem && evt.bubbles && !evt.cancelBubble) {
+                    processHtmxTrigger(evt, elem)                    
+                    elem = elem.parentElement?.closest(selector)
+                }
+            }
+
+            if (evt.bubbles && !evt.cancelBubble) {
+                var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "document")));
+                var elems = [];
+                var elem_triggers = [];
+                for (var el of input_elems) {
+                    filterElems(elems, elem_triggers, el, evt, "document");
+                }
+                triggerElems(elems, elem_triggers, evt, getDocument())
+            }
+        }
+
+        function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
+            for (var rule of getTriggerSpecs(el)) {
+                if (evt.type !== rule.trigger || rule.from === undefined) {
+                    continue;
+                }
+                if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
+                    continue;
+                }
+                if (rule.from.indexOf(selector) === -1) {
+                    continue
+                }
+                var elem_data = getInternalData(el);
+                if (elem_data.throttle) {
+                    continue;
+                }
+                if (maybeFilterEvent(rule, el, evt)) {
+                    continue;
+                }
+
+                // TODO: need to check rule.consume?
+                out_elems.push(el);
+                out_elem_triggers.push(rule);
+            }
+        }
+
+        /**
+          @param {string} evt_type
+          @param {string} selector
+        */
+        function hxTriggerFromSelector(evt_type, selector) {
+            var parent = "";
+            if (selector.indexOf("closest") === 0) {
+                parent = selector.slice(8);
+            }
+            return parent + " [hx-trigger*='from:" + selector + "']," + 
+                parent + " [data-hx-trigger*='from:" + selector + "']";
+        }
+
+        function findFromSelectorElems(elems, elem_triggers, evt, elem) {
+            var from_selector = state.modifier.from.selector;
+            if (from_selector[evt.type]) {
+                for (var selector of from_selector[evt.type]) {
+                    if (!matches(elem, selector)) {
+                        continue;
+                    }
+                    var match = hxTriggerFromSelector(evt.type, selector);
+                    for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
+                        if (ignoreBoostedAnchorCtrlClick(el, evt)) {
+                            continue;
+                        }
+
+                        filterElems(elems, elem_triggers, el, evt, selector);
+                    }
+                }
+            }
+        }
+
+        // Handle 'from:<value>' event modifier. <value> might exist
+        // anywhere on the page. It might not be part of the current
+        // section of tree going up or down.
+        // <value> can be:
+        // - <CSS selector> - above case applies, can be anywhere
+        // - closest <selector> (itself and ancestor)
+        // - find <selector> (chilren)
+        // - document
+        // - window
+        // Last four cases can be found from origin (evt.target).
+
+        /** @param {Event} evt
+            @param {HTMLElement} elem
+        */
+        function processHtmxTrigger(evt, elem) {
+            console.group("processHtmxTrigger", evt.type, elem, evt.target)
+
+            // TODO: add initButtonTracking event listeners here?
+            // There should not be much such elements on page so event
+            // count would be low.
+
+            if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){ 
+                evt.preventDefault();
+            }
+
+            if (ignoreBoostedAnchorCtrlClick(elem, evt)) {
+                return;
+            }
+
+            var elems = [];
+            var elem_triggers = [];
+
+            findFromSelectorElems(elems, elem_triggers, evt, elem)
+
+            var from_closest = state.modifier.from.closest;
+            if (from_closest[evt.type]) {
+                for (var selector of from_closest[evt.type]) {
+                    if (!matches(elem, selector)) {
+                        continue;
+                    }
+                    var match = hxTriggerFromSelector(evt.type, "closest " + selector);
+                    for (var el of toArray(querySelectorAllExt(elem, match))) {
+                        if (ignoreBoostedAnchorCtrlClick(el, evt)) {
+                            continue;
+                        }
+                        
+                        // Make sure it is the closest 'selector'
+                        // TODO: rethink logic
+                        if (closest(el, selector) !== elem) {
+                            continue;
+                        }
+
+                        filterElems(elems, elem_triggers, el, evt, selector);
+                    }
+                }
+            }
+
+            var from_find = state.modifier.from.find;
+            if (from_find[evt.type] && elem.parentElement) {
+                for (var selector of from_find[evt.type]) {
+                    if (!matches(elem, selector)) {
+                        continue;
+                    }
+                    var match = hxTriggerFromSelector(evt.type, "find " + selector);
+                    var elem_closest = elem;
+                    while (elem_closest.parentElement) {
+                        if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
+                            elem_closest = elem_closest.parentElement;
+                            continue;
+                        }
+
+                        elem_closest = closest(elem_closest.parentElement, match);
+                        if (!elem_closest) {
+                            break;
+                        }
+
+                        filterElems(elems, elem_triggers, elem_closest, evt, selector);
+                    }
+                }
+            }
+            
+            for (const spec of getTriggerSpecs(elem)) {
+                if (spec.trigger !== evt.type || spec.from) {
+                    continue;
+                }
+
+                if (spec.target && evt.target) {
+                    if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
+                        continue;
+                    }
+                }
+
+                if (maybeFilterEvent(spec, elem, evt)) {
+                    continue;
+                }
+
+                if(!isValidEventForDelegation(spec, elem)) {
+                    continue;
+                }
+                elems.push(elem);
+                elem_triggers.push(spec);
+
+                // TODO: Don't I need to check all 'elems'?
+                if (spec.consume) {
+                    evt.stopPropagation();
+                }
+            }
+
+            triggerElems(elems, elem_triggers, evt, elem);
+            console.groupEnd()
+        }
+
+        // TODO: Can I always assume 'document' and 'window' are true?
+        // Althought between evt.target and document/window
+        // might be a call to evt.stopPropagation. Have to 
+        // consider this. Would basically have to check if
+        // there is evt.type with consume. Make sure 
+        // consume doesn't have 'from:' that might apply to 
+        // some other section of the tree.
+
+        function triggerElems(elems, elem_triggers, evt, target_elem) {
+            var eventData = getInternalData(evt);
+            var target_data = undefined;
+            if (target_elem !== document && target_elem !== window) {
+                target_data = getInternalData(target_elem);
+            }
+            for (var i = 0; i < elems.length; i++) {
+                var elem = elems[i];
+                var elem_trigger = elem_triggers[i];
+                var elem_data = getInternalData(elem);
+
+                // NOTE: This might not work correctly if there is certain
+                // combination of hx-trigger combinations. 'delay'
+                // modifier might make it weird.
+                eventData.triggerSpec = elem_trigger;
+
+                // Make sure event trigger with 'once' is only called
+                // once
+                var attr_key = "hx-trigger";
+                var attr_value = getRawAttribute(elem, attr_key);
+                if (attr_value === null) {
+                    attr_key = "data-hx-trigger";
+                    attr_value = getRawAttribute(elem, attr_key);
+                }
+                if (attr_value && attr_value.includes(" once")) {
+                    var new_value = attr_value.split(",").filter(function(val) {
+                        return !val.includes(" once");
+                    }).join(",");
+
+                    if (new_value.length === 0) {
+                        elem.removeAttribute(attr_key);
+                    } else {
+                        elem.setAttribute(attr_key, new_value);
+                    }
+                }
+
+                if (elem_trigger.changed && target_data) {
+                    if (target_data.lastValue === target_elem.value) {
+                        continue;
+                    }
+                    target_data.lastValue = target_elem.value
+                }
+                
+                if (elem_data.delayed) {
+                    clearTimeout(elem_data.delayed);
+                }
+
+                // NOTE: filterElems removes elem+trigger with active
+                // throttle
+                if (elem_trigger.throttle) {
+                    if (!elem_data.throttle) {
+                        issueRequest(elem, evt);
+                        elem_data.throttle = setTimeout(function () {
+                            elem_data.throttle = null;
+                        }, elem_trigger.throttle);
+                    }
+                    continue;
+                } else if (elem_trigger.delay) {
+                    elem_data.delayed = setTimeout(function() { issueRequest(elem, evt) }, elem_trigger.delay);
+                    continue;
+                }
+
+                issueRequest(elem, evt);
+            }
+
+            function issueRequest(elem, evt) {
+                triggerEvent(elem, 'htmx:trigger')
+                forEach(VERBS, function (/** @type {string} */verb) {
+                    if (hasAttribute(elem,'hx-' + verb)) {
+                        var path = getAttributeValue(elem, 'hx-' + verb);
+                        if (closest(elem, htmx.config.disableSelector)) {
+                            cleanUpElement(elem)
+                            return
+                        }
+                        console.log("issueAjaxRequest", elem)
+                        issueAjaxRequest(verb, path, elem, evt)
+                    }
+                });
+            }
+        }
+
+        function handleWindowDelegation(evt, evt_str) {
+            var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "window")));
+            var elems = [];
+            var elem_triggers = [];
+            for (var el of input_elems) {
+                filterElems(elems, elem_triggers, el, evt, "window");
+            }
+            triggerElems(elems, elem_triggers, evt, window);
+        }
+
+        /** @param {string} evt_str */
+        function addDocumentEvent(evt_str) {
+            getDocument().addEventListener(evt_str, function(evt) { handleDocumentDelegation(evt, evt_str) }, true);
+        }
+
+        function addWindowEvent(evt_str) {
+            window.addEventListener(evt_str, function(evt) { handleWindowDelegation(evt, evt_str) });
+        }
+        
         return htmx;
     }
 )()
 }));
-
