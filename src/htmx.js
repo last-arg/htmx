@@ -1943,7 +1943,6 @@ return (function () {
             }
 
             var maybeSetLastButtonClicked = function (evt) {
-                // TODO?: should not need this closest function call?
                 var elt = closest(evt.target, "button, input[type='submit']");
                 if (elt !== null) {
                     var internalData = getInternalData(form);
