@@ -3954,7 +3954,7 @@ return (function () {
           * @param {string} evt_str 
           */
 
-        function handleEventDelegation(evt, evt_str) {
+        function handleDocumentDelegation(evt, evt_str) {
             console.log("handle:", evt_str, evt.target)
             
             if (evt.target !== document) {
@@ -3983,269 +3983,276 @@ return (function () {
                 }
                 triggerElems(elems, elem_triggers, evt, getDocument())
             }
+        }
 
-            // TODO: move fns outside
-            function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
-                for (var rule of getTriggerSpecs(el)) {
-                    if (evt.type !== rule.trigger || rule.from === undefined) {
-                        continue;
-                    }
-                    if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
-                        continue;
-                    }
-                    if (rule.from.indexOf(selector) === -1) {
-                        continue
-                    }
-                    var elem_data = getInternalData(el);
-                    if (elem_data.throttle) {
-                        continue;
-                    }
-                    if (maybeFilterEvent(rule, el, evt)) {
-                        continue;
-                    }
+        function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
+            for (var rule of getTriggerSpecs(el)) {
+                if (evt.type !== rule.trigger || rule.from === undefined) {
+                    continue;
+                }
+                if (rule.target && !matches(/** @type {HTMLElement} */ (evt.target), rule.target)) {
+                    continue;
+                }
+                if (rule.from.indexOf(selector) === -1) {
+                    continue
+                }
+                var elem_data = getInternalData(el);
+                if (elem_data.throttle) {
+                    continue;
+                }
+                if (maybeFilterEvent(rule, el, evt)) {
+                    continue;
+                }
 
-                    // TODO: need to check rule.consume?
-                    out_elems.push(el);
-                    out_elem_triggers.push(rule);
+                // TODO: need to check rule.consume?
+                out_elems.push(el);
+                out_elem_triggers.push(rule);
+            }
+        }
+
+        /**
+          @param {string} evt_type
+          @param {string} selector
+        */
+        function hxTriggerFromSelector(evt_type, selector) {
+            var parent = "";
+            if (selector.indexOf("closest") === 0) {
+                parent = selector.slice(8);
+            }
+            return parent + " [hx-trigger*='from:" + selector + "']," + 
+                parent + " [data-hx-trigger*='from:" + selector + "']";
+        }
+
+        function findFromSelectorElems(elems, elem_triggers, evt, elem) {
+            var from_selector = state.modifier.from.selector;
+            if (from_selector[evt.type]) {
+                for (var selector of from_selector[evt.type]) {
+                    if (!matches(elem, selector)) {
+                        continue;
+                    }
+                    var match = hxTriggerFromSelector(evt.type, selector);
+                    for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
+                        if (ignoreBoostedAnchorCtrlClick(el, evt)) {
+                            continue;
+                        }
+
+                        filterElems(elems, elem_triggers, el, evt, selector);
+                    }
+                }
+            }
+        }
+
+        // Handle 'from:<value>' event modifier. <value> might exist
+        // anywhere on the page. It might not be part of the current
+        // section of tree going up or down.
+        // <value> can be:
+        // - <CSS selector> - above case applies, can be anywhere
+        // - closest <selector> (itself and ancestor)
+        // - find <selector> (chilren)
+        // - document
+        // - window
+        // Last four cases can be found from origin (evt.target).
+
+        /** @param {Event} evt
+            @param {HTMLElement} elem
+        */
+        function processHtmxTrigger(evt, elem) {
+            console.group("processHtmxTrigger", evt.type, elem, evt.target)
+
+            // TODO: add initButtonTracking event listeners here?
+            // There should not be much such elements on page so event
+            // count would be low.
+
+            if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){ 
+                evt.preventDefault();
+            }
+
+            if (ignoreBoostedAnchorCtrlClick(elem, evt)) {
+                return;
+            }
+
+            var elems = [];
+            var elem_triggers = [];
+
+            findFromSelectorElems(elems, elem_triggers, evt, elem)
+
+            var from_closest = state.modifier.from.closest;
+            if (from_closest[evt.type]) {
+                for (var selector of from_closest[evt.type]) {
+                    if (!matches(elem, selector)) {
+                        continue;
+                    }
+                    var match = hxTriggerFromSelector(evt.type, "closest " + selector);
+                    for (var el of toArray(querySelectorAllExt(elem, match))) {
+                        if (ignoreBoostedAnchorCtrlClick(el, evt)) {
+                            continue;
+                        }
+                        
+                        // Make sure it is the closest 'selector'
+                        // TODO: rethink logic
+                        if (closest(el, selector) !== elem) {
+                            continue;
+                        }
+
+                        filterElems(elems, elem_triggers, el, evt, selector);
+                    }
                 }
             }
 
-            /**
-              @param {string} evt_type
-              @param {string} selector
-            */
-            function hxTriggerFromSelector(evt_type, selector) {
-                var parent = "";
-                if (selector.indexOf("closest") === 0) {
-                    parent = selector.slice(8);
-                }
-                return parent + " [hx-trigger*='from:" + selector + "']," + 
-                    parent + " [data-hx-trigger*='from:" + selector + "']";
-            }
-
-            function findFromSelectorElems(elems, elem_triggers, evt) {
-                var from_selector = state.modifier.from.selector;
-                if (from_selector[evt.type]) {
-                    for (var selector of from_selector[evt.type]) {
-                        if (!matches(elem, selector)) {
+            var from_find = state.modifier.from.find;
+            if (from_find[evt.type] && elem.parentElement) {
+                for (var selector of from_find[evt.type]) {
+                    if (!matches(elem, selector)) {
+                        continue;
+                    }
+                    var match = hxTriggerFromSelector(evt.type, "find " + selector);
+                    var elem_closest = elem;
+                    while (elem_closest.parentElement) {
+                        if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
+                            elem_closest = elem_closest.parentElement;
                             continue;
                         }
-                        var match = hxTriggerFromSelector(evt.type, selector);
-                        for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
-                            if (ignoreBoostedAnchorCtrlClick(el, evt)) {
-                                continue;
-                            }
 
-                            filterElems(elems, elem_triggers, el, evt, selector);
+                        elem_closest = closest(elem_closest.parentElement, match);
+                        if (!elem_closest) {
+                            break;
                         }
+
+                        filterElems(elems, elem_triggers, elem_closest, evt, selector);
                     }
                 }
             }
-
-            // Handle 'from:<value>' event modifier. <value> might exist
-            // anywhere on the page. It might not be part of the current
-            // section of tree going up or down.
-            // <value> can be:
-            // - <CSS selector> - above case applies, can be anywhere
-            // - closest <selector> (itself and ancestor)
-            // - find <selector> (chilren)
-            // - document
-            // - window
-            // Last four cases can be found from origin (evt.target).
-
-            /** @param {Event} evt
-                @param {HTMLElement} elem
-            */
-            function processHtmxTrigger(evt, elem) {
-                console.group("processHtmxTrigger", evt.type, elem, evt.target)
-
-                // TODO: add initButtonTracking event listeners here?
-                // There should not be much such elements on page so event
-                // count would be low.
-
-                if (isValidEventForDelegation({trigger: evt.type}, elem) && shouldCancel(evt, elem)){ 
-                    evt.preventDefault();
+            
+            for (const spec of getTriggerSpecs(elem)) {
+                if (spec.trigger !== evt.type || spec.from) {
+                    continue;
                 }
 
-                if (ignoreBoostedAnchorCtrlClick(elem, evt)) {
-                    return;
-                }
-
-                var elems = [];
-                var elem_triggers = [];
-
-                findFromSelectorElems(elems, elem_triggers, evt)
-
-                var from_closest = state.modifier.from.closest;
-                if (from_closest[evt.type]) {
-                    for (var selector of from_closest[evt.type]) {
-                        if (!matches(elem, selector)) {
-                            continue;
-                        }
-                        var match = hxTriggerFromSelector(evt.type, "closest " + selector);
-                        for (var el of toArray(querySelectorAllExt(elem, match))) {
-                            if (ignoreBoostedAnchorCtrlClick(el, evt)) {
-                                continue;
-                            }
-                            
-                            // Make sure it is the closest 'selector'
-                            // TODO: rethink logic
-                            if (closest(el, selector) !== elem) {
-                                continue;
-                            }
-
-                            filterElems(elems, elem_triggers, el, evt, selector);
-                        }
+                if (spec.target && evt.target) {
+                    if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
+                        continue;
                     }
                 }
 
-                var from_find = state.modifier.from.find;
-                if (from_find[evt.type] && elem.parentElement) {
-                    for (var selector of from_find[evt.type]) {
-                        if (!matches(elem, selector)) {
-                            continue;
-                        }
-                        var match = hxTriggerFromSelector(evt.type, "find " + selector);
-                        var elem_closest = elem;
-                        while (elem_closest.parentElement) {
-                            if (ignoreBoostedAnchorCtrlClick(elem_closest, evt)) {
-                                elem_closest = elem_closest.parentElement;
-                                continue;
-                            }
+                if (maybeFilterEvent(spec, elem, evt)) {
+                    continue;
+                }
 
-                            elem_closest = closest(elem_closest.parentElement, match);
-                            if (!elem_closest) {
-                                break;
-                            }
+                if(!isValidEventForDelegation(spec, elem)) {
+                    continue;
+                }
+                elems.push(elem);
+                elem_triggers.push(spec);
 
-                            filterElems(elems, elem_triggers, elem_closest, evt, selector);
-                        }
+                // TODO: Don't I need to check all 'elems'?
+                if (spec.consume) {
+                    evt.stopPropagation();
+                }
+            }
+
+            triggerElems(elems, elem_triggers, evt, elem);
+        }
+
+        // TODO: Can I always assume 'document' and 'window' are true?
+        // Althought between evt.target and document/window
+        // might be a call to evt.stopPropagation. Have to 
+        // consider this. Would basically have to check if
+        // there is evt.type with consume. Make sure 
+        // consume doesn't have 'from:' that might apply to 
+        // some other section of the tree.
+
+        function triggerElems(elems, elem_triggers, evt, target_elem) {
+            var eventData = getInternalData(evt);
+            var target_data = getInternalData(target_elem);
+            for (var i = 0; i < elems.length; i++) {
+                var elem = elems[i];
+                var elem_trigger = elem_triggers[i];
+                var elem_data = getInternalData(elem);
+
+                // NOTE: This might not work correctly if there is certain
+                // combination of hx-trigger combinations. 'delay'
+                // modifier might make it weird.
+                eventData.triggerSpec = elem_trigger;
+
+                // Make sure event trigger with 'once' is only called
+                // once
+                var attr_key = "hx-trigger";
+                var attr_value = getRawAttribute(elem, attr_key);
+                if (attr_value === null) {
+                    attr_key = "data-hx-trigger";
+                    attr_value = getRawAttribute(elem, attr_key);
+                }
+                if (attr_value && attr_value.includes(" once")) {
+                    var new_value = attr_value.split(",").filter(function(val) {
+                        return !val.includes(" once");
+                    }).join(",");
+
+                    if (new_value.length === 0) {
+                        elem.removeAttribute(attr_key);
+                    } else {
+                        elem.setAttribute(attr_key, new_value);
                     }
+                }
+
+                if (elem_trigger.changed) {
+                    if (target_data.lastValue === target_elem.value) {
+                        continue;
+                    }
+                    target_data.lastValue = target_elem.value
                 }
                 
-                for (const spec of getTriggerSpecs(elem)) {
-                    if (spec.trigger !== evt_str || spec.from) {
-                        continue;
-                    }
-
-                    if (spec.target && evt.target) {
-                        if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
-                            continue;
-                        }
-                    }
-
-                    if (maybeFilterEvent(spec, elem, evt)) {
-                        continue;
-                    }
-
-                    if(!isValidEventForDelegation(spec, elem)) {
-                        continue;
-                    }
-                    elems.push(elem);
-                    elem_triggers.push(spec);
-
-                    // TODO: Don't I need to check all 'elems'?
-                    if (spec.consume) {
-                        evt.stopPropagation();
-                    }
+                if (elem_data.delayed) {
+                    clearTimeout(elem_data.delayed);
                 }
 
-                triggerElems(elems, elem_triggers, evt, elem);
+                // NOTE: filterElems removes elem+trigger with active
+                // throttle
+                if (elem_trigger.throttle) {
+                    if (!elem_data.throttle) {
+                        issueRequest(elem, evt);
+                        elem_data.throttle = setTimeout(function () {
+                            elem_data.throttle = null;
+                        }, elem_trigger.throttle);
+                    }
+                    continue;
+                } else if (elem_trigger.delay) {
+                    elem_data.delayed = setTimeout(function() { issueRequest(elem, evt) }, elem_trigger.delay);
+                    continue;
+                }
+
+                issueRequest(elem, evt);
             }
 
-            // TODO: Can I always assume 'document' and 'window' are true?
-            // Althought between evt.target and document/window
-            // might be a call to evt.stopPropagation. Have to 
-            // consider this. Would basically have to check if
-            // there is evt.type with consume. Make sure 
-            // consume doesn't have 'from:' that might apply to 
-            // some other section of the tree.
-
-            function triggerElems(elems, elem_triggers, evt, target_elem) {
-                var eventData = getInternalData(evt);
-                var target_data = getInternalData(target_elem);
-                for (var i = 0; i < elems.length; i++) {
-                    var elem = elems[i];
-                    var elem_trigger = elem_triggers[i];
-                    var elem_data = getInternalData(elem);
-
-                    // NOTE: This might not work correctly if there is certain
-                    // combination of hx-trigger combinations. 'delay'
-                    // modifier might make it weird.
-                    eventData.triggerSpec = elem_trigger;
-
-                    // Make sure event trigger with 'once' is only called
-                    // once
-                    var attr_key = "hx-trigger";
-                    var attr_value = getRawAttribute(elem, attr_key);
-                    if (attr_value === null) {
-                        attr_key = "data-hx-trigger";
-                        attr_value = getRawAttribute(elem, attr_key);
-                    }
-                    if (attr_value && attr_value.includes(" once")) {
-                        var new_value = attr_value.split(",").filter(function(val) {
-                            return !val.includes(" once");
-                        }).join(",");
-
-                        if (new_value.length === 0) {
-                            elem.removeAttribute(attr_key);
-                        } else {
-                            elem.setAttribute(attr_key, new_value);
+            function issueRequest(elem, evt) {
+                triggerEvent(elem, 'htmx:trigger')
+                forEach(VERBS, function (/** @type {string} */verb) {
+                    if (hasAttribute(elem,'hx-' + verb)) {
+                        var path = getAttributeValue(elem, 'hx-' + verb);
+                        if (closest(elem, htmx.config.disableSelector)) {
+                            cleanUpElement(elem)
+                            return
                         }
+                        console.log("issueAjaxRequest", elem)
+                        issueAjaxRequest(verb, path, elem, evt)
                     }
-
-                    if (elem_trigger.changed) {
-                        if (target_data.lastValue === target_elem.value) {
-                            continue;
-                        }
-                        target_data.lastValue = target_elem.value
-                    }
-                    
-                    if (elem_data.delayed) {
-                        clearTimeout(elem_data.delayed);
-                    }
-
-                    // NOTE: filterElems removes elem+trigger with active
-                    // throttle
-                    if (elem_trigger.throttle) {
-                        if (!elem_data.throttle) {
-                            issueRequest(elem, evt);
-                            elem_data.throttle = setTimeout(function () {
-                                elem_data.throttle = null;
-                            }, elem_trigger.throttle);
-                        }
-                        continue;
-                    } else if (elem_trigger.delay) {
-                        elem_data.delayed = setTimeout(function() { issueRequest(elem, evt) }, elem_trigger.delay);
-                        continue;
-                    }
-
-                    issueRequest(elem, evt);
-                }
-
-                function issueRequest(elem, evt) {
-                    triggerEvent(elem, 'htmx:trigger')
-                    forEach(VERBS, function (/** @type {string} */verb) {
-                        if (hasAttribute(elem,'hx-' + verb)) {
-                            var path = getAttributeValue(elem, 'hx-' + verb);
-                            if (closest(elem, htmx.config.disableSelector)) {
-                                cleanUpElement(elem)
-                                return
-                            }
-                            console.log("issueAjaxRequest", elem)
-                            issueAjaxRequest(verb, path, elem, evt)
-                        }
-                    });
-                }
-
-
-                console.groupEnd();    
+                });
             }
+
+
+            console.groupEnd();    
+        }
+
+        function handleWindowDelegation(evt, evt_str) {
+            
         }
 
         /** @param {string} evt_str */
         function addDocumentEvent(evt_str) {
-            getDocument().addEventListener(evt_str, function(evt) { handleEventDelegation(evt, evt_str) }, true);
+            getDocument().addEventListener(evt_str, function(evt) { handleDocumentDelegation(evt, evt_str) }, true);
+        }
+
+        function addWindowEvent(evt_str) {
+            window.addEventListener(evt_str, function(evt) { handleWindowDelegation(evt, evt_str) });
         }
         
         return htmx;
