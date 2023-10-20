@@ -3965,11 +3965,8 @@ return (function () {
         }
 
         /** @param {Event} evt
-          * @param {string} evt_str 
           */
-
-        // TODO: remove evt_str 
-        function handleDocumentDelegation(evt, evt_str) {
+        function handleDocumentDelegation(evt) {
             if (evt.target !== document) {
                 var elem = /** @type {HTMLElement | null} */ (evt.target);
                 if (!elem) { return; }
@@ -4295,8 +4292,7 @@ return (function () {
             }
         }
 
-        // TODO: remove evt_str
-        function handleWindowDelegation(evt, evt_str) {
+        function handleWindowDelegation(evt) {
             var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "window")));
             var elems = [];
             var elem_triggers = [];
@@ -4308,11 +4304,12 @@ return (function () {
 
         /** @param {string} evt_str */
         function addDocumentEvent(evt_str) {
-            getDocument().addEventListener(evt_str, function(evt) { handleDocumentDelegation(evt, evt_str) }, true);
+            getDocument().addEventListener(evt_str, handleDocumentDelegation, true);
         }
 
+        /** @param {string} evt_str */
         function addWindowEvent(evt_str) {
-            window.addEventListener(evt_str, function(evt) { handleWindowDelegation(evt, evt_str) });
+            window.addEventListener(evt_str, handleWindowDelegation);
         }
         
         return htmx;
