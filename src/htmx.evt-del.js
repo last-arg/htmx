@@ -1429,14 +1429,12 @@ return (function () {
         }
 
         function isValidEventForDelegation(triggerSpec, elem) {
-            // TODO: need to make these conditions better in the future 
             var is_ext = hasAttribute("hx-ext");
-            var is_valid_selector = elem.matches(createEventSelector(triggerSpec.trigger));
             // This is more to detect extension elements
             var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
             // NOTE: not sure why <from> with click needs to evt.preventDefault()?
             var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
-            return !is_ext && is_valid_selector && !is_lone_trigger && !special_form_case;
+            return !is_ext && !is_lone_trigger && !special_form_case;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
