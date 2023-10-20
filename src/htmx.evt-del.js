@@ -1901,29 +1901,6 @@ return (function () {
             return document.querySelector("[hx-boost], [data-hx-boost]");
         }
 
-        function findHxOnWildcardElements(elt) {
-            var node = null
-            var elements = []
-
-            if (document.evaluate) {
-                var iter = document.evaluate('//*[@*[ starts-with(name(), "hx-on:") or starts-with(name(), "data-hx-on:") ]]', elt)
-                while (node = iter.iterateNext()) elements.push(node)
-            } else {
-                var allElements = document.getElementsByTagName("*")
-                for (var i = 0; i < allElements.length; i++) {
-                    var attributes = allElements[i].attributes
-                    for (var j = 0; j < attributes.length; j++) {
-                        var attrName = attributes[j].name
-                        if (startsWith(attrName, "hx-on:") || startsWith(attrName, "data-hx-on:")) {
-                            elements.push(allElements[i])
-                        }
-                    }
-                }
-            }
-
-            return elements
-        }
-
         function findElementsToProcess(elt) {
             if (elt.querySelectorAll) {
                 var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
@@ -1993,23 +1970,6 @@ return (function () {
             nodeData.onHandlers.push({event:eventName, listener:listener});
         }
 
-        function processHxOnWildcard(elt) {
-            // wipe any previous on handlers so that this function takes precedence
-            deInitOnHandlers(elt)
-
-            for (var i = 0; i < elt.attributes.length; i++) {
-                var name = elt.attributes[i].name
-                var value = elt.attributes[i].value
-                if (startsWith(name, "hx-on:") || startsWith(name, "data-hx-on:")) {
-                    let eventName = name.slice(name.indexOf(":") + 1)
-                    // if the eventName starts with a colon, prepend "htmx" for shorthand support
-                    if (startsWith(eventName, ":")) eventName = "htmx" + eventName
-
-                    addHxOnEventHandler(elt, eventName, value)
-                }
-            }
-        }
-
         function initNode(elt) {
             if (closest(elt, htmx.config.disableSelector)) {
                 cleanUpElement(elt)
@@ -2073,9 +2033,6 @@ return (function () {
             }
             initNode(elt);
             forEach(findElementsToProcess(elt), function(child) { initNode(child) });
-            // Because it happens second, the new way of adding onHandlers superseeds the old one
-            // i.e. if there are any hx-on:eventName attributes, the hx-on attribute will be ignored
-            forEach(findHxOnWildcardElements(elt), processHxOnWildcard);
         }
 
         //====================================================================
@@ -3809,7 +3766,6 @@ return (function () {
                 target: { }
             }
         };
-        const attr = "hx-trigger"
 
         /** @param {any[]} triggerSpecs
         /** @param {HTMLElement} elem
@@ -3902,6 +3858,34 @@ return (function () {
                 }
             }
 
+            var attr = null
+            if (document.evaluate) {
+                var iter = document.evaluate('//@*[ starts-with(name(), "hx-on:") or starts-with(name(), "data-hx-on:")]', elem)
+                while (attr = iter.iterateNext()) {
+                    var start = attr.name.indexOf(":") + 1;
+                    var event_name = attr.name.slice(start);
+                    if (event_name[0] === ":") event_name = "htmx" + event_name;
+
+                    if (!state.events.includes(event_name)) {
+                        state.events.push(event_name);
+                        addDocumentEvent(event_name);
+                        addWindowEvent(event_name);
+                    }
+                }
+            } else {
+                // TODO: document.evaluate fallback
+                // var allElements = document.getElementsByTagName("*")
+                // for (var i = 0; i < allElements.length; i++) {
+                //     var attributes = allElements[i].attributes
+                //     for (var j = 0; j < attributes.length; j++) {
+                //         var attrName = attributes[j].name
+                //         if (startsWith(attrName, "hx-on:") || startsWith(attrName, "data-hx-on:")) {
+                //             elements.push(allElements[i])
+                //         }
+                //     }
+                // }
+            }
+            
             return state;
         }
 
@@ -3911,7 +3895,18 @@ return (function () {
             @param {string} evtType
         */
         function createEventSelector(evtType) {
+            var attr = "hx-trigger";
             var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
+            attr = "hx-on";
+            // TODO: maybe there is better way to do it (replaceAll).
+            var escaped_evt_type = evtType.replaceAll(":", "\\:").replaceAll(".", "\\.");
+            attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+            if (startsWith(evtType, "htmx:")) {
+                // TODO: maybe there is better way to do it (replaceAll).
+                var escaped_evt_type = evtType.replace("htmx", "").replaceAll(":", "\\:").replaceAll(".", "\\.");
+                attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+            }
+
             if (evtType === "click") {
                 // NOTE: Empty hx-trigger will get click event
                 // Althought empty hx-trigger event callback doesn't do anything.
@@ -3988,6 +3983,8 @@ return (function () {
                 
                 var selector = createEventSelector(evt.type);
 
+                // TODO: maybe it would be more performant/better to use
+                // just .parentElement, not closest().
                 elem = closest(elem, selector);
                 // NOTE: 'evt.cancelBubble' value will become true if 
                 // stop(Immediate)Propagation was called. 
@@ -3995,7 +3992,10 @@ return (function () {
                 // else changed it?
                 while (elem && evt.bubbles && !evt.cancelBubble) {
                     processHtmxTrigger(evt, elem);
-                    processHtmxOn(evt, elem);
+                    var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
+                    if (!has_hx_on_wildcard) {
+                        processHtmxOn(evt, elem);
+                    }
                     elem = elem.parentElement?.closest(selector)
                 }
             }
@@ -4009,6 +4009,34 @@ return (function () {
                 }
                 triggerElems(elems, elem_triggers, evt, getDocument())
             }
+        }
+
+        function processHxOnWildcard(evt, elt) {
+            console.group("processHxOnWildcard", evt.type, elt);
+            var found_attr = false;
+            var hx_attr = "hx-on:" + evt.type;
+            var data_hx_attr = "data-" + hx_attr;
+            var short_hx_attr = "";
+            var short_data_hx_attr = "";
+            if (startsWith(evt.type, "htmx:")) {
+                short_hx_attr = "hx-on:" + evt.type.replace("htmx", "");
+                short_data_hx_attr = "data-" + short_hx_attr;
+            }
+            for (var i = 0; i < elt.attributes.length; i++) {
+                var attr = elt.attributes[i];
+                if (attr.name === hx_attr || attr.name === data_hx_attr || attr.name === short_hx_attr || attr.name === short_data_hx_attr) {
+                    maybeEval(elt, function() {
+                        var func;
+                        if (!func) {
+                            func = new Function("event", attr.value);
+                        }
+                        func.call(elt, evt);
+                    });
+                    found_attr = true;
+                }
+            }
+            console.groupEnd();
+            return found_attr;
         }
 
         function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
