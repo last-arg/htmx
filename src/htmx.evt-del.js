@@ -3757,13 +3757,17 @@ return (function () {
             modifier: {
                 from: {
                     selector: {},
+                    selector_str: {},
                     find: {},
+                    find_str: {},
                     closest: {},
+                    closest_str: {},
                 },
                 target: { }
             }
         };
 
+        // TODO: initButtonTracking() here or where I handle events
         /** @param {any[]} triggerSpecs
         /** @param {HTMLElement} elem
          ** @param {State} state */
@@ -3836,6 +3840,16 @@ return (function () {
                 }
             }
 
+            for (var key in state.modifier.from.selector) {
+                state.modifier.from.selector_str[key] = state.modifier.from.selector[key].join(",")
+            }
+            for (var key in state.modifier.from.find) {
+                state.modifier.from.find_str[key] = state.modifier.from.find[key].join(",")
+            }
+            for (var key in state.modifier.from.closest) {
+                state.modifier.from.closest_str[key] = state.modifier.from.closest[key].join(",")
+            }
+
             var hx_on_value = getAttributeValue(elem, 'hx-on');
             if (hx_on_value) {
                 var lines = hx_on_value.split("\n");
@@ -3894,6 +3908,9 @@ return (function () {
         function createEventSelector(evtType) {
             var attr = "hx-trigger";
             var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
+            // TODO?: could keep track of hx-on:* events separately and
+            // only include selectors for events that are in available for
+            // hx-on:*
             attr = "hx-on";
             var escaped_evt_type = CSS.escape(evtType);
             attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
@@ -3910,23 +3927,19 @@ return (function () {
                 attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
 
-            attr_event += modifierSelector(state.modifier.from.selector[evtType]);
-            attr_event += modifierSelector(state.modifier.from.closest[evtType]);
-            attr_event += modifierSelector(state.modifier.from.find[evtType]);
+            attr_event += modifierSelector(state.modifier.from.selector_str[evtType]);
+            attr_event += modifierSelector(state.modifier.from.closest_str[evtType]);
+            attr_event += modifierSelector(state.modifier.from.find_str[evtType]);
 
             function modifierSelector(modifier) {
-                if (modifier && modifier.length > 0) {
-                    return "," + modifier.join(",");
-                }
-                return "";
+                return modifier ? "," + modifier : "";
             }
             
-            var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
-            return VERB_SELECTOR + boostedElts + ", form, [type='submit'], [data-hx-on], [hx-on], " + attr_event;
+            var boostedElts = hasChanceOfBeingBoosted() ? ",a" : "";
+            return VERB_SELECTOR + boostedElts + ",form,[type='submit'],[data-hx-on],[hx-on]," + attr_event;
         }
 
         function processHtmxOn(evt, elt) {
-            console.group("processHtmxOn", evt.type, elt)
             var hxOnValue = getAttributeValue(elt, 'hx-on');
             if (hxOnValue) {
                 var code = ""
@@ -3958,7 +3971,6 @@ return (function () {
                     });
                 }
             }
-            console.groupEnd();
         }
 
         /** @param {Event} evt
@@ -3968,33 +3980,32 @@ return (function () {
                 var elem = /** @type {HTMLElement | null} */ (evt.target);
                 if (!elem) { return; }
 
-                if (!evt.bubbles || evt.cancelBubble) {
-                    processHtmxTrigger(evt, elem);
-                    var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
-                    if (!has_hx_on_wildcard) {
-                        processHtmxOn(evt, elem);
-                    }
-                }
-                
                 var selector = createEventSelector(evt.type);
 
-                // TODO: maybe it would be more performant/better to use
-                // just .parentElement, not closest().
-                elem = closest(elem, selector);
-                // NOTE: 'evt.cancelBubble' value will become true if 
-                // stop(Immediate)Propagation was called. 
-                // 'evt.bubbles' is read-only value but can something
-                // else changed it?
-                while (elem && evt.bubbles && !evt.cancelBubble) {
+                if (!evt.bubbles || evt.cancelBubble && matches(elem, selector)) {
                     processHtmxTrigger(evt, elem);
                     var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
                     if (!has_hx_on_wildcard) {
                         processHtmxOn(evt, elem);
                     }
-                    elem = elem.parentElement?.closest(selector)
+                } else {
+                    elem = closest(elem, selector);
+                    // NOTE: 'evt.cancelBubble' value will become true if 
+                    // stop(Immediate)Propagation was called. 
+                    // 'evt.bubbles' is read-only value but can something
+                    // else changed it?
+                    while (elem && evt.bubbles && !evt.cancelBubble) {
+                        processHtmxTrigger(evt, elem);
+                        var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
+                        if (!has_hx_on_wildcard) {
+                            processHtmxOn(evt, elem);
+                        }
+                        elem = elem.parentElement?.closest(selector)
+                    }
                 }
             }
 
+            // hx-trigger="<event> from:document"
             if (evt.bubbles && !evt.cancelBubble) {
                 var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "document")));
                 var elems = [];
@@ -4007,19 +4018,27 @@ return (function () {
         }
 
         function processHxOnWildcard(evt, elt) {
-            console.group("processHxOnWildcard", evt.type, elt);
             var found_attr = false;
-            var hx_attr = "hx-on:" + evt.type;
-            var data_hx_attr = "data-" + hx_attr;
-            var short_hx_attr = "";
-            var short_data_hx_attr = "";
+            var valid_attrs = new Array(4);
+            valid_attrs[0] = "hx-on:" + evt.type;
+            valid_attrs[1] = "data-" + valid_attrs[0];
             if (startsWith(evt.type, "htmx:")) {
-                short_hx_attr = "hx-on:" + evt.type.replace("htmx", "");
-                short_data_hx_attr = "data-" + short_hx_attr;
+                valid_attrs[2] = "hx-on:" + evt.type.replace("htmx", "");
+                valid_attrs[3] = "data-" + valid_attrs[2];
             }
+            for (var attr_name of valid_attrs) {
+                if (elt.hasAttribute(attr_name)) {
+                    found_attr = true;
+                    break;
+                }
+            }
+            if (!found_attr) {
+                return found_attr;
+            }
+
             for (var i = 0; i < elt.attributes.length; i++) {
                 var attr = elt.attributes[i];
-                if (attr.name === hx_attr || attr.name === data_hx_attr || attr.name === short_hx_attr || attr.name === short_data_hx_attr) {
+                if (valid_attrs.indexOf(attr.name) >= 0) {
                     maybeEval(elt, function() {
                         var func;
                         if (!func) {
@@ -4030,7 +4049,6 @@ return (function () {
                     found_attr = true;
                 }
             }
-            console.groupEnd();
             return found_attr;
         }
 
@@ -4074,7 +4092,7 @@ return (function () {
 
         function findFromSelectorElems(elems, elem_triggers, evt, elem) {
             var from_selector = state.modifier.from.selector;
-            if (!from_selector[evt.type] || !matches(elem, from_selector[evt.type].join(","))) {
+            if (!from_selector[evt.type] || !matches(elem, state.modifier.from.selector[evt.type])) {
                 return;
             }
 
@@ -4108,7 +4126,6 @@ return (function () {
             @param {HTMLElement} elem
         */
         function processHtmxTrigger(evt, elem) {
-            console.group("processHtmxTrigger", evt.type, elem, evt.target)
 
             // TODO: add initButtonTracking event listeners here?
             // There should not be much such elements on page so event
@@ -4128,7 +4145,7 @@ return (function () {
             findFromSelectorElems(elems, elem_triggers, evt, elem)
 
             var from_closest = state.modifier.from.closest;
-            if (from_closest[evt.type] && matches(elem, from_closest[evt.type].join(","))) {
+            if (from_closest[evt.type] && matches(elem, state.modifier.from.closest_str[evt.type])) {
                 for (var selector of from_closest[evt.type]) {
                     if (!matches(elem, selector)) {
                         continue;
@@ -4151,7 +4168,7 @@ return (function () {
             }
 
             var from_find = state.modifier.from.find;
-            if (from_find[evt.type] && elem.parentElement && matches(elem, from_find[evt.type].join(","))) {
+            if (from_find[evt.type] && elem.parentElement && matches(elem, state.modifier.from.find[evt.type])) {
                 for (var selector of from_find[evt.type]) {
                     if (!matches(elem, selector)) {
                         continue;
@@ -4204,7 +4221,6 @@ return (function () {
             }
 
             triggerElems(elems, elem_triggers, evt, elem);
-            console.groupEnd()
         }
 
         // TODO: Can I always assume 'document' and 'window' are true?
@@ -4289,7 +4305,6 @@ return (function () {
                             cleanUpElement(elem)
                             return
                         }
-                        console.log("issueAjaxRequest", elem)
                         issueAjaxRequest(verb, path, elem, evt)
                     }
                 });
