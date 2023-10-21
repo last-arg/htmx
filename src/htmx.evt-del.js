@@ -1428,6 +1428,7 @@ return (function () {
             return false;
         }
 
+        // TODO?: just pass triggerSpec.trigger only?
         function isValidEventForDelegation(triggerSpec, elem) {
             var is_ext = hasAttribute("hx-ext");
             var has_verb = VERBS.some((verb) => hasAttribute(elem, "hx-" + verb));
@@ -3767,6 +3768,15 @@ return (function () {
             }
         };
 
+        function addModifierSelector(modifier, trigger, from) {
+            var obj = state.modifier.from[modifier];
+            if (!obj[trigger]) {
+                obj[trigger] = [from];
+            } else if (obj[trigger].indexOf(from) === -1) {
+                obj[trigger].push(from);
+            }
+        }
+        
         // TODO: initButtonTracking() here or where I handle events
         /** @param {any[]} triggerSpecs
         /** @param {HTMLElement} elem
@@ -3786,36 +3796,12 @@ return (function () {
                 }
                 
                 if (spec.from) {
-                    // from:<selector>
-                    // Event trigger can happen anywhere in the site.
-                    // Can't save Element/Node it might be deleted/replaced.
-                    // The element might change.
-                    // Save:
-                    // - event type
-                    // - from <selector>
-                    // - hx-trigger value (part that applies to this event type)
-                    // - Do I have to take 'consume' into account?
                     if (spec.from.indexOf("closest") === 0) {
-                        var closest = state.modifier.from.closest;
-                        if (!closest[spec.trigger]) {
-                            closest[spec.trigger] = [spec.from.slice(8)];
-                        } else {
-                            closest[spec.trigger].push(spec.from.slice(8));
-                        }
+                        addModifierSelector("closest", spec.trigger, spec.from.slice(8));
                     } else if (spec.from.indexOf("find") === 0) {
-                        var find = state.modifier.from.find;
-                        if (!find[spec.trigger]) {
-                            find[spec.trigger] = [spec.from.slice(5)];
-                        } else {
-                            find[spec.trigger].push(spec.from.slice(5))
-                        }
+                        addModifierSelector("find", spec.trigger, spec.from.slice(5));
                     } else {
-                        var selector = state.modifier.from.selector;
-                        if (!selector[spec.trigger]) {
-                            selector[spec.trigger] = [spec.from];
-                        } else if (selector[spec.trigger].indexOf(spec.from) === -1) {
-                            selector[spec.trigger].push(spec.from);
-                        }
+                        addModifierSelector("selector", spec.trigger, spec.from);
                     }
 
                     // Need target only if there is also 'form' modifier
