@@ -3896,12 +3896,10 @@ return (function () {
             var attr = "hx-trigger";
             var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
             attr = "hx-on";
-            // TODO: maybe there is better way to do it (replaceAll).
-            var escaped_evt_type = evtType.replaceAll(":", "\\:").replaceAll(".", "\\.");
+            var escaped_evt_type = CSS.escape(evtType);
             attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
             if (startsWith(evtType, "htmx:")) {
-                // TODO: maybe there is better way to do it (replaceAll).
-                var escaped_evt_type = evtType.replace("htmx", "").replaceAll(":", "\\:").replaceAll(".", "\\.");
+                var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
                 attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
             }
 
