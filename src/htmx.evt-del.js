@@ -1430,11 +1430,10 @@ return (function () {
 
         function isValidEventForDelegation(triggerSpec, elem) {
             var is_ext = hasAttribute("hx-ext");
-            // This is more to detect extension elements
-            var is_lone_trigger = (VERBS.every((verb) => !hasAttribute(elem, "hx-" + verb)));
+            var has_verb = VERBS.some((verb) => hasAttribute(elem, "hx-" + verb));
             // NOTE: not sure why <from> with click needs to evt.preventDefault()?
             var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
-            return !is_ext && !is_lone_trigger && !special_form_case;
+            return !is_ext && has_verb && !special_form_case;
         }
 
         function addEventListener(elt, handler, nodeData, triggerSpec, explicitCancel) {
@@ -3971,7 +3970,10 @@ return (function () {
 
                 if (!evt.bubbles || evt.cancelBubble) {
                     processHtmxTrigger(evt, elem);
-                    processHtmxOn(evt, elem);
+                    var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
+                    if (!has_hx_on_wildcard) {
+                        processHtmxOn(evt, elem);
+                    }
                 }
                 
                 var selector = createEventSelector(evt.type);
@@ -4072,19 +4074,21 @@ return (function () {
 
         function findFromSelectorElems(elems, elem_triggers, evt, elem) {
             var from_selector = state.modifier.from.selector;
-            if (from_selector[evt.type]) {
-                for (var selector of from_selector[evt.type]) {
-                    if (!matches(elem, selector)) {
+            if (!from_selector[evt.type] || !matches(elem, from_selector[evt.type].join(","))) {
+                return;
+            }
+
+            for (var selector of from_selector[evt.type]) {
+                if (!matches(elem, selector)) {
+                    continue;
+                }
+                var match = hxTriggerFromSelector(evt.type, selector);
+                for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
+                    if (ignoreBoostedAnchorCtrlClick(el, evt)) {
                         continue;
                     }
-                    var match = hxTriggerFromSelector(evt.type, selector);
-                    for (var el of toArray(querySelectorAllExt(getDocument(), match))) {
-                        if (ignoreBoostedAnchorCtrlClick(el, evt)) {
-                            continue;
-                        }
 
-                        filterElems(elems, elem_triggers, el, evt, selector);
-                    }
+                    filterElems(elems, elem_triggers, el, evt, selector);
                 }
             }
         }
@@ -4124,7 +4128,7 @@ return (function () {
             findFromSelectorElems(elems, elem_triggers, evt, elem)
 
             var from_closest = state.modifier.from.closest;
-            if (from_closest[evt.type]) {
+            if (from_closest[evt.type] && matches(elem, from_closest[evt.type].join(","))) {
                 for (var selector of from_closest[evt.type]) {
                     if (!matches(elem, selector)) {
                         continue;
@@ -4147,7 +4151,7 @@ return (function () {
             }
 
             var from_find = state.modifier.from.find;
-            if (from_find[evt.type] && elem.parentElement) {
+            if (from_find[evt.type] && elem.parentElement && matches(elem, from_find[evt.type].join(","))) {
                 for (var selector of from_find[evt.type]) {
                     if (!matches(elem, selector)) {
                         continue;
@@ -4170,30 +4174,32 @@ return (function () {
                 }
             }
             
-            for (const spec of getTriggerSpecs(elem)) {
-                if (spec.trigger !== evt.type || spec.from) {
-                    continue;
-                }
-
-                if (spec.target && evt.target) {
-                    if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
+            if (matches(elem, VERB_SELECTOR + ",a, form, [type='submit']")) {
+                for (const spec of getTriggerSpecs(elem)) {
+                    if (spec.trigger !== evt.type || spec.from) {
                         continue;
                     }
-                }
 
-                if (maybeFilterEvent(spec, elem, evt)) {
-                    continue;
-                }
+                    if (spec.target && evt.target) {
+                        if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
+                            continue;
+                        }
+                    }
 
-                if(!isValidEventForDelegation(spec, elem)) {
-                    continue;
-                }
-                elems.push(elem);
-                elem_triggers.push(spec);
+                    if (maybeFilterEvent(spec, elem, evt)) {
+                        continue;
+                    }
 
-                // TODO: Don't I need to check all 'elems'?
-                if (spec.consume) {
-                    evt.stopPropagation();
+                    if(!isValidEventForDelegation(spec, elem)) {
+                        continue;
+                    }
+                    elems.push(elem);
+                    elem_triggers.push(spec);
+
+                    // TODO: Don't I need to check all 'elems'?
+                    if (spec.consume) {
+                        evt.stopPropagation();
+                    }
                 }
             }
 
