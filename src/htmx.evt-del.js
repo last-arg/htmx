@@ -3789,7 +3789,7 @@ return (function () {
 
                 if (spec.changed) {
                     var eltsToListenOn = spec.from ? querySelectorAllExt(elem, spec.from) : [elem];
-                    eltsToListenOn.forEach(function (eltToListenOn) {
+                    forEach(eltsToListenOn, function (eltToListenOn) {
                         var eltToListenOnData = getInternalData(eltToListenOn);
                         eltToListenOnData.lastValue = eltToListenOn.value;
                     })
