@@ -4018,38 +4018,33 @@ return (function () {
         }
 
         function processHxOnWildcard(evt, elt) {
-            var found_attr = false;
-            var valid_attrs = new Array(4);
-            valid_attrs[0] = "hx-on:" + evt.type;
+            var valid_attrs = ["hx-on:" + evt.type];
             valid_attrs[1] = "data-" + valid_attrs[0];
             if (startsWith(evt.type, "htmx:")) {
                 valid_attrs[2] = "hx-on:" + evt.type.replace("htmx", "");
                 valid_attrs[3] = "data-" + valid_attrs[2];
             }
-            for (var attr_name of valid_attrs) {
-                if (elt.hasAttribute(attr_name)) {
-                    found_attr = true;
+            var attr_name = undefined;
+            for (var i = 0; i < valid_attrs.length; i++) {
+                if (elt.hasAttribute(valid_attrs[i])) {
+                    attr_name = valid_attrs[i];
                     break;
                 }
             }
-            if (!found_attr) {
-                return found_attr;
+            if (!attr_name) {
+                return false;
             }
 
-            for (var i = 0; i < elt.attributes.length; i++) {
-                var attr = elt.attributes[i];
-                if (valid_attrs.indexOf(attr.name) >= 0) {
-                    maybeEval(elt, function() {
-                        var func;
-                        if (!func) {
-                            func = new Function("event", attr.value);
-                        }
-                        func.call(elt, evt);
-                    });
-                    found_attr = true;
+            var attr = elt.attributes[attr_name];
+            maybeEval(elt, function() {
+                var func;
+                if (!func) {
+                    func = new Function("event", attr.value);
                 }
-            }
-            return found_attr;
+                func.call(elt, evt);
+            });
+
+            return true;
         }
 
         function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
