@@ -3749,13 +3749,13 @@ return (function () {
 
         // TODO: have to probably make it 'global'
         /** @typedef {Object} State
-          * @property {string[]} events
+          * @property {string[]} hx_trigger_events 
           * @property {string[]} hx_on_events
           * @property {string[]} hx_on_legacy_events
           * @property {Object.<'from', ModifierFrom> & Object.<'target', ModifierTarget>} modifier
           */
         var state = {
-            events: [],
+            hx_trigger_events: [],
             hx_on_events: [],
             hx_on_legacy_events: [],
             // TODO: use Map instead?
@@ -3779,6 +3779,16 @@ return (function () {
             } else if (obj[trigger].indexOf(from) === -1) {
                 obj[trigger].push(from);
             }
+        }
+
+        function addWindAndDocEvent(evt_name) {
+            if (state.hx_on_events.indexOf(evt_name) === -1
+            && state.hx_trigger_events.indexOf(evt_name) === -1
+            && state.hx_on_legacy_events.indexOf(evt_name) === -1) {
+                return;
+            }
+            addDocumentEvent(evt_name);
+            addWindowEvent(evt_name);
         }
         
         // TODO: initButtonTracking() here or where I handle events
@@ -3823,10 +3833,9 @@ return (function () {
                     }
                 }
 
-                if (!state.events.includes(spec.trigger)) {
-                    state.events.push(spec.trigger);
-                    addDocumentEvent(spec.trigger);
-                    addWindowEvent(spec.trigger);
+                if (!state.hx_trigger_events.includes(spec.trigger)) {
+                    state.hx_trigger_events.push(spec.trigger);
+                    addWindAndDocEvent(spec.trigger);
                 }
             }
 
@@ -3851,11 +3860,7 @@ return (function () {
                         var event_name = match[1].slice(0, -1); // strip last colon
                         if (!state.hx_on_legacy_events.includes(event_name)) {
                             state.hx_on_legacy_events.push(event_name);
-                            if (!state.events.includes(event_name)) {
-                                state.events.push(event_name);
-                                addDocumentEvent(event_name);
-                                addWindowEvent(event_name);
-                            }
+                            addWindAndDocEvent(event_name);
                         }
                     }
                     curlyCount += countCurlies(line);
@@ -3873,12 +3878,7 @@ return (function () {
 
                     if (!state.hx_on_events.includes(event_name)) {
                         state.hx_on_events.push(event_name);
-
-                        if (!state.events.includes(event_name)) {
-                            state.events.push(event_name);
-                            addDocumentEvent(event_name);
-                            addWindowEvent(event_name);
-                        }
+                        addWindAndDocEvent(event_name);
                     }
                 }
             } else {
@@ -3898,50 +3898,38 @@ return (function () {
             return state;
         }
 
-        // TODO: separate selector construction
-        // * hx-trigger
-        // * hx-on
-        // * hx-on:* (wildcard)
-        // This means have to do less work when processing event
-
         /**
             @param {string} evtType
         */
         function createEventSelector(evtType) {
-            var boostedElts = hasChanceOfBeingBoosted() ? ",a" : "";
-            var result = VERB_SELECTOR + boostedElts + ",form,[type='submit']";
-            if (state.hx_on_legacy_events.indexOf(evtType) >= 0) {
-                result += ",[data-hx-on],[hx-on]";
+            var result = "";
+            if (state.hx_trigger_events.includes(evtType)) {
+                result += VERB_SELECTOR
+                    + (hasChanceOfBeingBoosted() ? ",a" : "") + ",form,[type='submit']"
+                    + ",[hx-trigger*='" + evtType + "'],[data-hx-trigger*='" + evtType + "']"
+                    + modifierSelector(state.modifier.from.selector_str[evtType])
+                    + modifierSelector(state.modifier.from.closest_str[evtType])
+                    + modifierSelector(state.modifier.from.find_str[evtType]);
             }
-            var attr = "hx-trigger";
-            result += ",[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
+
+            if (state.hx_on_legacy_events.indexOf(evtType) >= 0) {
+                result += (result.length === 0 ? "" : ",") + "[data-hx-on],[hx-on]";
+            }
+
             if (state.hx_on_events.indexOf(evtType) !== -1) {
-                attr = "hx-on";
                 var escaped_evt_type = CSS.escape(evtType);
-                result += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+                result += (result.length === 0 ? "" : ",") + "[hx-on\\:" + escaped_evt_type + "],[data-hx-on\\:" + escaped_evt_type + "]";
                 if (startsWith(evtType, "htmx:")) {
                     var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
-                    result += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+                    result += ",[hx-on\\:" + escaped_evt_type + "],[data-hx-on\\:" + escaped_evt_type + "]";
                 }
             }
 
-            if (evtType === "click") {
-                // NOTE: Empty hx-trigger will get click event
-                // Althought empty hx-trigger event callback doesn't do anything.
-                // Empty function body. It is empty function body if there
-                // is no ajax action to take (i.e. no hx-get, hx-post, ...).
-                result += ",[hx-trigger=''],[data-hx-trigger='']";
-            }
-
-            result += modifierSelector(state.modifier.from.selector_str[evtType]);
-            result += modifierSelector(state.modifier.from.closest_str[evtType]);
-            result += modifierSelector(state.modifier.from.find_str[evtType]);
-
-            function modifierSelector(modifier) {
-                return modifier ? "," + modifier : "";
-            }
-            
             return result;
+        }
+
+        function modifierSelector(modifier) {
+            return modifier ? "," + modifier : "";
         }
 
         function processHtmxOn(evt, elt) {
