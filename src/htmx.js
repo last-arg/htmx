@@ -3751,11 +3751,13 @@ return (function () {
         /** @typedef {Object} State
           * @property {string[]} events
           * @property {string[]} hx_on_events
+          * @property {string[]} hx_on_legacy_events
           * @property {Object.<'from', ModifierFrom> & Object.<'target', ModifierTarget>} modifier
           */
         var state = {
             events: [],
             hx_on_events: [],
+            hx_on_legacy_events: [],
             // TODO: use Map instead?
             modifier: {
                 from: {
@@ -3847,10 +3849,13 @@ return (function () {
                     var match = line.match(/^\s*([a-zA-Z:\-\.]+:)(.*)/);
                     if (curlyCount === 0 && match) {
                         var event_name = match[1].slice(0, -1); // strip last colon
-                        if (!state.events.includes(event_name)) {
-                            state.events.push(event_name);
-                            addDocumentEvent(event_name);
-                            addWindowEvent(event_name);
+                        if (!state.hx_on_legacy_events.includes(event_name)) {
+                            state.hx_on_legacy_events.push(event_name);
+                            if (!state.events.includes(event_name)) {
+                                state.events.push(event_name);
+                                addDocumentEvent(event_name);
+                                addWindowEvent(event_name);
+                            }
                         }
                     }
                     curlyCount += countCurlies(line);
@@ -3893,21 +3898,30 @@ return (function () {
             return state;
         }
 
-        // TODO: could construct this conditionally
-        // - submit events require certain elements
+        // TODO: separate selector construction
+        // * hx-trigger
+        // * hx-on
+        // * hx-on:* (wildcard)
+        // This means have to do less work when processing event
+
         /**
             @param {string} evtType
         */
         function createEventSelector(evtType) {
+            var boostedElts = hasChanceOfBeingBoosted() ? ",a" : "";
+            var result = VERB_SELECTOR + boostedElts + ",form,[type='submit']";
+            if (state.hx_on_legacy_events.indexOf(evtType) >= 0) {
+                result += ",[data-hx-on],[hx-on]";
+            }
             var attr = "hx-trigger";
-            var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
+            result += ",[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
             if (state.hx_on_events.indexOf(evtType) !== -1) {
                 attr = "hx-on";
                 var escaped_evt_type = CSS.escape(evtType);
-                attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+                result += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
                 if (startsWith(evtType, "htmx:")) {
                     var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
-                    attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+                    result += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
                 }
             }
 
@@ -3916,19 +3930,18 @@ return (function () {
                 // Althought empty hx-trigger event callback doesn't do anything.
                 // Empty function body. It is empty function body if there
                 // is no ajax action to take (i.e. no hx-get, hx-post, ...).
-                attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
+                result += ",[hx-trigger=''],[data-hx-trigger='']";
             }
 
-            attr_event += modifierSelector(state.modifier.from.selector_str[evtType]);
-            attr_event += modifierSelector(state.modifier.from.closest_str[evtType]);
-            attr_event += modifierSelector(state.modifier.from.find_str[evtType]);
+            result += modifierSelector(state.modifier.from.selector_str[evtType]);
+            result += modifierSelector(state.modifier.from.closest_str[evtType]);
+            result += modifierSelector(state.modifier.from.find_str[evtType]);
 
             function modifierSelector(modifier) {
                 return modifier ? "," + modifier : "";
             }
             
-            var boostedElts = hasChanceOfBeingBoosted() ? ",a" : "";
-            return VERB_SELECTOR + boostedElts + ",form,[type='submit'],[data-hx-on],[hx-on]," + attr_event;
+            return result;
         }
 
         function processHtmxOn(evt, elt) {
