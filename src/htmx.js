@@ -3750,10 +3750,12 @@ return (function () {
         // TODO: have to probably make it 'global'
         /** @typedef {Object} State
           * @property {string[]} events
+          * @property {string[]} hx_on_events
           * @property {Object.<'from', ModifierFrom> & Object.<'target', ModifierTarget>} modifier
           */
         var state = {
             events: [],
+            hx_on_events: [],
             // TODO: use Map instead?
             modifier: {
                 from: {
@@ -3855,6 +3857,7 @@ return (function () {
                 }
             }
 
+            /** @type {Attr | null} */
             var attr = null
             if (document.evaluate) {
                 var iter = document.evaluate('//@*[ starts-with(name(), "hx-on:") or starts-with(name(), "data-hx-on:")]', elem)
@@ -3863,10 +3866,14 @@ return (function () {
                     var event_name = attr.name.slice(start);
                     if (event_name[0] === ":") event_name = "htmx" + event_name;
 
-                    if (!state.events.includes(event_name)) {
-                        state.events.push(event_name);
-                        addDocumentEvent(event_name);
-                        addWindowEvent(event_name);
+                    if (!state.hx_on_events.includes(event_name)) {
+                        state.hx_on_events.push(event_name);
+
+                        if (!state.events.includes(event_name)) {
+                            state.events.push(event_name);
+                            addDocumentEvent(event_name);
+                            addWindowEvent(event_name);
+                        }
                     }
                 }
             } else {
@@ -3894,15 +3901,14 @@ return (function () {
         function createEventSelector(evtType) {
             var attr = "hx-trigger";
             var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
-            // TODO?: could keep track of hx-on:* events separately and
-            // only include selectors for events that are in available for
-            // hx-on:*
-            attr = "hx-on";
-            var escaped_evt_type = CSS.escape(evtType);
-            attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
-            if (startsWith(evtType, "htmx:")) {
-                var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
+            if (state.hx_on_events.indexOf(evtType) !== -1) {
+                attr = "hx-on";
+                var escaped_evt_type = CSS.escape(evtType);
                 attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+                if (startsWith(evtType, "htmx:")) {
+                    var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
+                    attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+                }
             }
 
             if (evtType === "click") {
