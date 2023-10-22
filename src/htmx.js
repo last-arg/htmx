@@ -3774,10 +3774,13 @@ return (function () {
 
         function addModifierSelector(modifier, trigger, from) {
             var obj = state.modifier.from[modifier];
+            var obj_str = state.modifier.from[modifier + "_str"];
             if (!obj[trigger]) {
                 obj[trigger] = [from];
+                obj_str[trigger] = from;
             } else if (obj[trigger].indexOf(from) === -1) {
                 obj[trigger].push(from);
+                obj_str[trigger] += "," + from;
             }
         }
 
@@ -3837,16 +3840,6 @@ return (function () {
                     state.hx_trigger_events.push(spec.trigger);
                     addWindAndDocEvent(spec.trigger);
                 }
-            }
-
-            for (var key in state.modifier.from.selector) {
-                state.modifier.from.selector_str[key] = state.modifier.from.selector[key].join(",")
-            }
-            for (var key in state.modifier.from.find) {
-                state.modifier.from.find_str[key] = state.modifier.from.find[key].join(",")
-            }
-            for (var key in state.modifier.from.closest) {
-                state.modifier.from.closest_str[key] = state.modifier.from.closest[key].join(",")
             }
 
             var hx_on_value = getAttributeValue(elem, 'hx-on');
