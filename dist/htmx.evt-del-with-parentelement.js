@@ -1428,9 +1428,9 @@ return (function () {
             return false;
         }
 
-        // TODO?: just pass triggerSpec.trigger only?
         function isValidEventForDelegation(triggerSpec, elem) {
             var is_ext = hasAttribute("hx-ext");
+            // This is more to detect extension elements
             var has_verb = VERBS.some((verb) => hasAttribute(elem, "hx-" + verb));
             // NOTE: not sure why <from> with click needs to evt.preventDefault()?
             var special_form_case = elem.tagName === "FORM" && triggerSpec.trigger === "click";
@@ -3749,52 +3749,22 @@ return (function () {
 
         // TODO: have to probably make it 'global'
         /** @typedef {Object} State
-          * @property {string[]} hx_trigger_events 
-          * @property {string[]} hx_on_events
-          * @property {string[]} hx_on_legacy_events
+          * @property {string[]} events
           * @property {Object.<'from', ModifierFrom> & Object.<'target', ModifierTarget>} modifier
           */
         var state = {
-            hx_trigger_events: [],
-            hx_on_events: [],
-            hx_on_legacy_events: [],
+            events: [],
             // TODO: use Map instead?
             modifier: {
                 from: {
                     selector: {},
-                    selector_str: {},
                     find: {},
-                    find_str: {},
                     closest: {},
-                    closest_str: {},
                 },
                 target: { }
             }
         };
 
-        function addModifierSelector(modifier, trigger, from) {
-            var obj = state.modifier.from[modifier];
-            var obj_str = state.modifier.from[modifier + "_str"];
-            if (!obj[trigger]) {
-                obj[trigger] = [from];
-                obj_str[trigger] = from;
-            } else if (obj[trigger].indexOf(from) === -1) {
-                obj[trigger].push(from);
-                obj_str[trigger] += "," + from;
-            }
-        }
-
-        function addWindAndDocEvent(evt_name) {
-            if (state.hx_on_events.indexOf(evt_name) === -1
-            && state.hx_trigger_events.indexOf(evt_name) === -1
-            && state.hx_on_legacy_events.indexOf(evt_name) === -1) {
-                return;
-            }
-            addDocumentEvent(evt_name);
-            addWindowEvent(evt_name);
-        }
-        
-        // TODO: initButtonTracking() here or where I handle events
         /** @param {any[]} triggerSpecs
         /** @param {HTMLElement} elem
          ** @param {State} state */
@@ -3806,19 +3776,43 @@ return (function () {
 
                 if (spec.changed) {
                     var eltsToListenOn = spec.from ? querySelectorAllExt(elem, spec.from) : [elem];
-                    forEach(eltsToListenOn, function (eltToListenOn) {
+                    eltsToListenOn.forEach(function (eltToListenOn) {
                         var eltToListenOnData = getInternalData(eltToListenOn);
                         eltToListenOnData.lastValue = eltToListenOn.value;
                     })
                 }
                 
                 if (spec.from) {
+                    // from:<selector>
+                    // Event trigger can happen anywhere in the site.
+                    // Can't save Element/Node it might be deleted/replaced.
+                    // The element might change.
+                    // Save:
+                    // - event type
+                    // - from <selector>
+                    // - hx-trigger value (part that applies to this event type)
+                    // - Do I have to take 'consume' into account?
                     if (spec.from.indexOf("closest") === 0) {
-                        addModifierSelector("closest", spec.trigger, spec.from.slice(8));
+                        var closest = state.modifier.from.closest;
+                        if (!closest[spec.trigger]) {
+                            closest[spec.trigger] = [spec.from.slice(8)];
+                        } else {
+                            closest[spec.trigger].push(spec.from.slice(8));
+                        }
                     } else if (spec.from.indexOf("find") === 0) {
-                        addModifierSelector("find", spec.trigger, spec.from.slice(5));
+                        var find = state.modifier.from.find;
+                        if (!find[spec.trigger]) {
+                            find[spec.trigger] = [spec.from.slice(5)];
+                        } else {
+                            find[spec.trigger].push(spec.from.slice(5))
+                        }
                     } else {
-                        addModifierSelector("selector", spec.trigger, spec.from);
+                        var selector = state.modifier.from.selector;
+                        if (!selector[spec.trigger]) {
+                            selector[spec.trigger] = [spec.from];
+                        } else if (selector[spec.trigger].indexOf(spec.from) === -1) {
+                            selector[spec.trigger].push(spec.from);
+                        }
                     }
 
                     // Need target only if there is also 'form' modifier
@@ -3836,9 +3830,10 @@ return (function () {
                     }
                 }
 
-                if (!state.hx_trigger_events.includes(spec.trigger)) {
-                    state.hx_trigger_events.push(spec.trigger);
-                    addWindAndDocEvent(spec.trigger);
+                if (!state.events.includes(spec.trigger)) {
+                    state.events.push(spec.trigger);
+                    addDocumentEvent(spec.trigger);
+                    addWindowEvent(spec.trigger);
                 }
             }
 
@@ -3851,16 +3846,16 @@ return (function () {
                     var match = line.match(/^\s*([a-zA-Z:\-\.]+:)(.*)/);
                     if (curlyCount === 0 && match) {
                         var event_name = match[1].slice(0, -1); // strip last colon
-                        if (!state.hx_on_legacy_events.includes(event_name)) {
-                            state.hx_on_legacy_events.push(event_name);
-                            addWindAndDocEvent(event_name);
+                        if (!state.events.includes(event_name)) {
+                            state.events.push(event_name);
+                            addDocumentEvent(event_name);
+                            addWindowEvent(event_name);
                         }
                     }
                     curlyCount += countCurlies(line);
                 }
             }
 
-            /** @type {Attr | null} */
             var attr = null
             if (document.evaluate) {
                 var iter = document.evaluate('//@*[ starts-with(name(), "hx-on:") or starts-with(name(), "data-hx-on:")]', elem)
@@ -3869,9 +3864,10 @@ return (function () {
                     var event_name = attr.name.slice(start);
                     if (event_name[0] === ":") event_name = "htmx" + event_name;
 
-                    if (!state.hx_on_events.includes(event_name)) {
-                        state.hx_on_events.push(event_name);
-                        addWindAndDocEvent(event_name);
+                    if (!state.events.includes(event_name)) {
+                        state.events.push(event_name);
+                        addDocumentEvent(event_name);
+                        addWindowEvent(event_name);
                     }
                 }
             } else {
@@ -3891,41 +3887,47 @@ return (function () {
             return state;
         }
 
+        // TODO: could construct this conditionally
+        // - submit events require certain elements
         /**
             @param {string} evtType
         */
         function createEventSelector(evtType) {
-            var result = "";
-            if (state.hx_trigger_events.includes(evtType)) {
-                result += VERB_SELECTOR
-                    + (hasChanceOfBeingBoosted() ? ",a" : "") + ",form,[type='submit']"
-                    + ",[hx-trigger*='" + evtType + "'],[data-hx-trigger*='" + evtType + "']"
-                    + modifierSelector(state.modifier.from.selector_str[evtType])
-                    + modifierSelector(state.modifier.from.closest_str[evtType])
-                    + modifierSelector(state.modifier.from.find_str[evtType]);
+            var attr = "hx-trigger";
+            var attr_event = "[" + attr + "*='" + evtType + "'],[data-" + attr + "*='" + evtType + "']";
+            attr = "hx-on";
+            var escaped_evt_type = CSS.escape(evtType);
+            attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
+            if (startsWith(evtType, "htmx:")) {
+                var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
+                attr_event += ",[" + attr + "\\:" + escaped_evt_type + "],[data-" + attr + "\\:" + escaped_evt_type + "]";
             }
 
-            if (state.hx_on_legacy_events.indexOf(evtType) >= 0) {
-                result += (result.length === 0 ? "" : ",") + "[data-hx-on],[hx-on]";
+            if (evtType === "click") {
+                // NOTE: Empty hx-trigger will get click event
+                // Althought empty hx-trigger event callback doesn't do anything.
+                // Empty function body. It is empty function body if there
+                // is no ajax action to take (i.e. no hx-get, hx-post, ...).
+                attr_event += ",[hx-trigger=''],[data-hx-trigger='']";
             }
 
-            if (state.hx_on_events.indexOf(evtType) !== -1) {
-                var escaped_evt_type = CSS.escape(evtType);
-                result += (result.length === 0 ? "" : ",") + "[hx-on\\:" + escaped_evt_type + "],[data-hx-on\\:" + escaped_evt_type + "]";
-                if (startsWith(evtType, "htmx:")) {
-                    var escaped_evt_type = CSS.escape(evtType.replace("htmx", ""));
-                    result += ",[hx-on\\:" + escaped_evt_type + "],[data-hx-on\\:" + escaped_evt_type + "]";
+            attr_event += modifierSelector(state.modifier.from.selector[evtType]);
+            attr_event += modifierSelector(state.modifier.from.closest[evtType]);
+            attr_event += modifierSelector(state.modifier.from.find[evtType]);
+
+            function modifierSelector(modifier) {
+                if (modifier && modifier.length > 0) {
+                    return "," + modifier.join(",");
                 }
+                return "";
             }
-
-            return result;
-        }
-
-        function modifierSelector(modifier) {
-            return modifier ? "," + modifier : "";
+            
+            var boostedElts = hasChanceOfBeingBoosted() ? ", a" : "";
+            return VERB_SELECTOR + boostedElts + ", form, [type='submit'], [data-hx-on], [hx-on], " + attr_event;
         }
 
         function processHtmxOn(evt, elt) {
+            console.group("processHtmxOn", evt.type, elt)
             var hxOnValue = getAttributeValue(elt, 'hx-on');
             if (hxOnValue) {
                 var code = ""
@@ -3957,6 +3959,7 @@ return (function () {
                     });
                 }
             }
+            console.groupEnd();
         }
 
         /** @param {Event} evt
@@ -3966,32 +3969,29 @@ return (function () {
                 var elem = /** @type {HTMLElement | null} */ (evt.target);
                 if (!elem) { return; }
 
-                var selector = createEventSelector(evt.type);
-
-                if (!evt.bubbles || evt.cancelBubble && matches(elem, selector)) {
+                if (!evt.bubbles || evt.cancelBubble) {
                     processHtmxTrigger(evt, elem);
                     var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
                     if (!has_hx_on_wildcard) {
                         processHtmxOn(evt, elem);
                     }
-                } else {
-                    elem = closest(elem, selector);
-                    // NOTE: 'evt.cancelBubble' value will become true if 
-                    // stop(Immediate)Propagation was called. 
-                    // 'evt.bubbles' is read-only value but can something
-                    // else changed it?
-                    while (elem && evt.bubbles && !evt.cancelBubble) {
-                        processHtmxTrigger(evt, elem);
-                        var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
-                        if (!has_hx_on_wildcard) {
-                            processHtmxOn(evt, elem);
-                        }
-                        elem = elem.parentElement?.closest(selector)
+                }
+                
+                elem = elem;
+                // NOTE: 'evt.cancelBubble' value will become true if 
+                // stop(Immediate)Propagation was called. 
+                // 'evt.bubbles' is read-only value but can something
+                // else changed it?
+                while (elem && evt.bubbles && !evt.cancelBubble) {
+                    processHtmxTrigger(evt, elem);
+                    var has_hx_on_wildcard = processHxOnWildcard(evt, elem);
+                    if (!has_hx_on_wildcard) {
+                        processHtmxOn(evt, elem);
                     }
+                    elem = elem.parentElement;
                 }
             }
 
-            // hx-trigger="<event> from:document"
             if (evt.bubbles && !evt.cancelBubble) {
                 var input_elems = toArray(getDocument().querySelectorAll(hxTriggerFromSelector(evt.type, "document")));
                 var elems = [];
@@ -4004,33 +4004,36 @@ return (function () {
         }
 
         function processHxOnWildcard(evt, elt) {
-            var valid_attrs = ["hx-on:" + evt.type];
-            valid_attrs[1] = "data-" + valid_attrs[0];
+            console.group("processHxOnWildcard", evt.type, elt);
+            var found_attr = false;
+            var hx_attr = "hx-on:" + evt.type;
+            var data_hx_attr = "data-" + hx_attr;
+            var selector = "["+CSS.escape(hx_attr)+"],["+CSS.escape(data_hx_attr)+"]";
+            var short_hx_attr = "";
+            var short_data_hx_attr = "";
             if (startsWith(evt.type, "htmx:")) {
-                valid_attrs[2] = "hx-on:" + evt.type.replace("htmx", "");
-                valid_attrs[3] = "data-" + valid_attrs[2];
+                short_hx_attr = "hx-on:" + evt.type.replace("htmx", "");
+                short_data_hx_attr = "data-" + short_hx_attr;
+                selector += ",["+CSS.escape(short_hx_attr)+"],["+CSS.escape(short_data_hx_attr)+"]";
             }
-            var attr_name = undefined;
-            for (var i = 0; i < valid_attrs.length; i++) {
-                if (elt.hasAttribute(valid_attrs[i])) {
-                    attr_name = valid_attrs[i];
-                    break;
+            if (!matches(elt, selector)) {
+                return found_attr;
+            }
+            for (var i = 0; i < elt.attributes.length; i++) {
+                var attr = elt.attributes[i];
+                if (attr.name === hx_attr || attr.name === data_hx_attr || attr.name === short_hx_attr || attr.name === short_data_hx_attr) {
+                    maybeEval(elt, function() {
+                        var func;
+                        if (!func) {
+                            func = new Function("event", attr.value);
+                        }
+                        func.call(elt, evt);
+                    });
+                    found_attr = true;
                 }
             }
-            if (!attr_name) {
-                return false;
-            }
-
-            var attr = elt.attributes[attr_name];
-            maybeEval(elt, function() {
-                var func;
-                if (!func) {
-                    func = new Function("event", attr.value);
-                }
-                func.call(elt, evt);
-            });
-
-            return true;
+            console.groupEnd();
+            return found_attr;
         }
 
         function filterElems(out_elems, out_elem_triggers, el, evt, selector) {
@@ -4073,7 +4076,7 @@ return (function () {
 
         function findFromSelectorElems(elems, elem_triggers, evt, elem) {
             var from_selector = state.modifier.from.selector;
-            if (!from_selector[evt.type] || !matches(elem, state.modifier.from.selector[evt.type])) {
+            if (!from_selector[evt.type] || !matches(elem, from_selector[evt.type].join(","))) {
                 return;
             }
 
@@ -4107,7 +4110,9 @@ return (function () {
             @param {HTMLElement} elem
         */
         function processHtmxTrigger(evt, elem) {
-
+            console.group("processHtmxTrigger", evt.type, elem, evt.target)
+            var from_closest = state.modifier.from.closest;
+            var from_find = state.modifier.from.find;
             // TODO: add initButtonTracking event listeners here?
             // There should not be much such elements on page so event
             // count would be low.
@@ -4125,8 +4130,7 @@ return (function () {
 
             findFromSelectorElems(elems, elem_triggers, evt, elem)
 
-            var from_closest = state.modifier.from.closest;
-            if (from_closest[evt.type] && matches(elem, state.modifier.from.closest_str[evt.type])) {
+            if (from_closest[evt.type] && matches(elem, from_closest[evt.type].join(","))) {
                 for (var selector of from_closest[evt.type]) {
                     if (!matches(elem, selector)) {
                         continue;
@@ -4148,8 +4152,7 @@ return (function () {
                 }
             }
 
-            var from_find = state.modifier.from.find;
-            if (from_find[evt.type] && elem.parentElement && matches(elem, state.modifier.from.find[evt.type])) {
+            if (from_find[evt.type] && elem.parentElement && matches(elem, from_find[evt.type].join(","))) {
                 for (var selector of from_find[evt.type]) {
                     if (!matches(elem, selector)) {
                         continue;
@@ -4172,36 +4175,37 @@ return (function () {
                 }
             }
             
-            if (matches(elem, VERB_SELECTOR + ",a, form, [type='submit']")) {
-                for (const spec of getTriggerSpecs(elem)) {
-                    if (spec.trigger !== evt.type || spec.from) {
+            for (const spec of getTriggerSpecs(elem)) {
+                if (spec.trigger !== evt.type || spec.from) {
+                    continue;
+                }
+
+                if (spec.target && evt.target) {
+                    if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
                         continue;
                     }
+                }
 
-                    if (spec.target && evt.target) {
-                        if (!matches(/** @type {HTMLElement} */ (evt.target), spec.target)) {
-                            continue;
-                        }
-                    }
+                if (maybeFilterEvent(spec, elem, evt)) {
+                    continue;
+                }
 
-                    if (maybeFilterEvent(spec, elem, evt)) {
-                        continue;
-                    }
+                console.log(!isValidEventForDelegation(spec, elem))
+                if(!isValidEventForDelegation(spec, elem)) {
+                    continue;
+                }
+                elems.push(elem);
+                elem_triggers.push(spec);
 
-                    if(!isValidEventForDelegation(spec, elem)) {
-                        continue;
-                    }
-                    elems.push(elem);
-                    elem_triggers.push(spec);
-
-                    // TODO: Don't I need to check all 'elems'?
-                    if (spec.consume) {
-                        evt.stopPropagation();
-                    }
+                // TODO: Don't I need to check all 'elems'?
+                if (spec.consume) {
+                    evt.stopPropagation();
                 }
             }
 
+            console.log(elems)
             triggerElems(elems, elem_triggers, evt, elem);
+            console.groupEnd()
         }
 
         // TODO: Can I always assume 'document' and 'window' are true?
@@ -4286,6 +4290,7 @@ return (function () {
                             cleanUpElement(elem)
                             return
                         }
+                        console.log("issueAjaxRequest", elem)
                         issueAjaxRequest(verb, path, elem, evt)
                     }
                 });
